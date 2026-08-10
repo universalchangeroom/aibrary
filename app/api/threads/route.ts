@@ -52,6 +52,10 @@ function sourceModelFromPayload(body: PublishThreadBody): string | null {
         return "GPT-4o";
       case "Claude":
         return "Claude 3.5 Sonnet";
+      case "DeepSeek":
+        return "DeepSeek";
+      case "Gemini":
+        return "Gemini";
       case "Perplexity":
         return "Other";
       case "Pasted Text":

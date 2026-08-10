@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FileText, Loader2, Upload } from "lucide-react";
 
 import { AuthModal } from "@/components/auth/auth-modal";
+import { BookmarkletCard } from "@/components/import/bookmarklet-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +21,10 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
+import {
+  CHATSHARE_PENDING_HASH_KEY,
+  CHATSHARE_PENDING_IMPORT_KEY,
+} from "@/lib/bookmarklet";
 import type { ImportedMessage } from "@/lib/import-link/types";
 
 interface ImportModalProps {
@@ -132,21 +137,39 @@ function normalizeParseTextPayload(payload: unknown): ParsedPreview {
 
   if (messages.length === 0) {
     throw new Error(
-      'Could not detect speaker turns. Use labels like "User:" / "You:" and "ChatGPT:" / "Assistant:".'
+      'Could not detect speaker turns. Use labels like "User:" / "You:" and "DeepSeek:" / "ChatGPT:" / "Assistant:" / "Thought process:".'
     );
   }
 
+  const source =
+    typeof data.source === "string" && data.source.trim()
+      ? data.source
+      : "Pasted Text";
+  const defaultTitle =
+    source === "DeepSeek"
+      ? "Imported DeepSeek Thread"
+      : source === "Gemini"
+        ? "Imported Gemini Thread"
+        : source === "Claude"
+          ? "Imported Claude Thread"
+          : "Imported Thread";
+
   return {
-    source: "Pasted Text",
+    source,
     title:
       typeof data.title === "string" && data.title.trim()
         ? data.title
-        : "Imported Thread",
-    originalUrl: "",
+        : defaultTitle,
+    originalUrl:
+      typeof data.originalUrl === "string" ? data.originalUrl : "",
     messages,
     verified: false,
   };
 }
+
+/** Accepted public share links for the Paste Link import flow. */
+const SUPPORTED_SHARE_URL =
+  /^https?:\/\/(?:(?:www\.)?(?:chatgpt\.com|chat\.openai\.com)\/share\/|(?:www\.)?chat\.deepseek\.com\/share\/)[a-zA-Z0-9._-]+\/?$/i;
 
 export function ImportModal({
   triggerLabel = "Get started free",
@@ -169,6 +192,7 @@ export function ImportModal({
   const publishAfterAuthRef = useRef(false);
   /** Prevents double POST if auth success and session effect both fire. */
   const publishInFlightRef = useRef(false);
+  const pendingImportHandledRef = useRef(false);
 
   function resetState() {
     setMode("link");
@@ -183,9 +207,97 @@ export function ImportModal({
     publishInFlightRef.current = false;
   }
 
+  /**
+   * Restore a thread preview queued by the bookmarklet
+   * (localStorage and/or ?import=true + hash handoff).
+   */
+  useEffect(() => {
+    if (typeof window === "undefined" || pendingImportHandledRef.current) {
+      return;
+    }
+
+    try {
+      // Cross-origin handoff: bookmarklet opens ChatShare with #chatshare_pending=...
+      const { hash } = window.location;
+      const hashPrefix = `#${CHATSHARE_PENDING_HASH_KEY}=`;
+      if (hash.startsWith(hashPrefix)) {
+        const encoded = hash.slice(hashPrefix.length);
+        const decoded = decodeURIComponent(encoded);
+        // Validate JSON before persisting
+        JSON.parse(decoded);
+        localStorage.setItem(CHATSHARE_PENDING_IMPORT_KEY, decoded);
+        // Strip hash while keeping ?import=true when present
+        window.history.replaceState(
+          null,
+          "",
+          window.location.pathname + window.location.search
+        );
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      const importFlag = params.get("import") === "true";
+      const raw = localStorage.getItem(CHATSHARE_PENDING_IMPORT_KEY);
+
+      if (!raw && !importFlag) {
+        return;
+      }
+
+      pendingImportHandledRef.current = true;
+
+      if (!raw) {
+        setOpen(true);
+        setError(
+          "No pending import found. Run the ChatShare bookmarklet on a chat tab first."
+        );
+        // Drop empty ?import=true from the URL
+        if (importFlag) {
+          params.delete("import");
+          const q = params.toString();
+          window.history.replaceState(
+            null,
+            "",
+            window.location.pathname + (q ? `?${q}` : "")
+          );
+        }
+        return;
+      }
+
+      const data = JSON.parse(raw) as Record<string, unknown>;
+      const preview = normalizeParseTextPayload({ success: true, data });
+      localStorage.removeItem(CHATSHARE_PENDING_IMPORT_KEY);
+      setResult(preview);
+      setOpen(true);
+      setError(null);
+
+      if (importFlag) {
+        params.delete("import");
+        const q = params.toString();
+        window.history.replaceState(
+          null,
+          "",
+          window.location.pathname + (q ? `?${q}` : "")
+        );
+      }
+    } catch {
+      pendingImportHandledRef.current = true;
+      try {
+        localStorage.removeItem(CHATSHARE_PENDING_IMPORT_KEY);
+      } catch {
+        // ignore
+      }
+      setOpen(true);
+      setError(
+        "Could not restore the bookmarklet import. Try Paste Text instead."
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only pending import hydrate
+  }, []);
+
   function sourceModelFromResult(preview: ParsedPreview): string {
     if (preview.source === "ChatGPT") return "GPT-4o";
     if (preview.source === "Claude") return "Claude 3.5 Sonnet";
+    if (preview.source === "DeepSeek") return "DeepSeek";
+    if (preview.source === "Gemini") return "Gemini";
     if (preview.source === "Perplexity") return "Other";
     return preview.source || "Other";
   }
@@ -307,12 +419,14 @@ export function ImportModal({
 
     const trimmed = url.trim();
     if (!trimmed) {
-      setError("Please paste a ChatGPT share URL.");
+      setError("Please paste a ChatGPT or DeepSeek share URL.");
       return;
     }
 
-    if (!/^https?:\/\/.+/i.test(trimmed)) {
-      setError("Invalid URL. Example: https://chatgpt.com/share/…");
+    if (!SUPPORTED_SHARE_URL.test(trimmed)) {
+      setError(
+        "Invalid URL. Use a ChatGPT or DeepSeek share link, e.g. https://chatgpt.com/share/… or https://chat.deepseek.com/share/…"
+      );
       return;
     }
 
@@ -419,8 +533,8 @@ export function ImportModal({
         <DialogHeader>
           <DialogTitle>Import a conversation</DialogTitle>
           <DialogDescription>
-            Paste a public share link, or paste conversation text copied from
-            ChatGPT or Claude.
+            Paste a public ChatGPT or DeepSeek share link, or paste conversation
+            text copied from ChatGPT, Claude, or DeepSeek.
           </DialogDescription>
         </DialogHeader>
 
@@ -447,7 +561,9 @@ export function ImportModal({
               <TabsContent value="link" className="mt-4 space-y-4">
                 <form onSubmit={handleImport} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="home-import-url">ChatGPT share URL</Label>
+                    <Label htmlFor="home-import-url">
+                      ChatGPT or DeepSeek share URL
+                    </Label>
                     <Input
                       id="home-import-url"
                       type="url"
@@ -456,7 +572,7 @@ export function ImportModal({
                         setUrl(event.target.value);
                         setError(null);
                       }}
-                      placeholder="https://chatgpt.com/share/…"
+                      placeholder="https://chatgpt.com/share/… or https://chat.deepseek.com/share/…"
                       disabled={isLoading}
                       autoComplete="off"
                     />
@@ -480,6 +596,8 @@ export function ImportModal({
                     )}
                   </Button>
                 </form>
+
+                <BookmarkletCard />
               </TabsContent>
             ) : null}
 
@@ -519,6 +637,8 @@ export function ImportModal({
                     )}
                   </Button>
                 </form>
+
+                <BookmarkletCard />
               </TabsContent>
             ) : null}
 
@@ -530,6 +650,13 @@ export function ImportModal({
                   Parsing conversation text…
                 </div>
               </TabsContent>
+            ) : null}
+
+            {/* While link is loading, still surface the card so users can discover the bookmarklet */}
+            {mode === "link" && isLoading ? (
+              <div className="mt-4 space-y-4">
+                <BookmarkletCard />
+              </div>
             ) : null}
           </Tabs>
         ) : null}
