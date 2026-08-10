@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Loader2, Upload } from "lucide-react";
+import { Loader2, Sparkles, Upload } from "lucide-react";
 
+import { MarkdownRenderer } from "@/components/markdown-renderer";
+import { RichTextEditor } from "@/components/rich-text-editor";
 import { AuthModal } from "@/components/auth/auth-modal";
 import { BookmarkletCard } from "@/components/import/bookmarklet-card";
 import { Badge } from "@/components/ui/badge";
@@ -19,13 +21,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import {
   CHATSHARE_PENDING_HASH_KEY,
   CHATSHARE_PENDING_IMPORT_KEY,
 } from "@/lib/bookmarklet";
 import type { ImportedMessage } from "@/lib/import-link/types";
+import { parseTags } from "@/lib/parse-transcript";
+import { parseRawText } from "@/lib/parse-raw-text";
+import { suggestTags } from "@/lib/suggest-tags";
+import { cn } from "@/lib/utils";
 
 interface ImportModalProps {
   triggerLabel?: string;
@@ -193,11 +198,89 @@ export function ImportModal({
   /** Prevents double POST if auth success and session effect both fire. */
   const publishInFlightRef = useRef(false);
   const pendingImportHandledRef = useRef(false);
+  const [showPasteHint, setShowPasteHint] = useState(false);
+  const [pasteSourceLabel, setPasteSourceLabel] = useState("Gemini");
+  const [tagsInput, setTagsInput] = useState("");
+  /** Keywords from the last click of “Suggest Tags” (not live auto-run). */
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
+
+  /** Live parse of the Paste Text transcript (client-side parseRawText). */
+  const parsedConversation = useMemo(() => {
+    try {
+      return parseRawText(rawText);
+    } catch {
+      return {
+        source: "Pasted Text",
+        title: "Imported Thread",
+        messages: [] as Array<{ role: "user" | "assistant"; content: string }>,
+      };
+    }
+  }, [rawText]);
+
+  const livePreviewMessages = useMemo(
+    () =>
+      (parsedConversation.messages ?? []).filter(
+        (m) =>
+          m &&
+          (m.role === "user" || m.role === "assistant") &&
+          typeof m.content === "string" &&
+          m.content.trim().length > 0
+      ),
+    [parsedConversation.messages]
+  );
+
+  const livePreview: ParsedPreview | null =
+    livePreviewMessages.length > 0
+      ? {
+          source: parsedConversation.source || "Pasted Text",
+          title: parsedConversation.title || "Imported Thread",
+          originalUrl: "",
+          messages: livePreviewMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+          verified: false,
+        }
+      : null;
+
+  const appliedTagSet = useMemo(() => {
+    return new Set(parseTags(tagsInput).map((tag) => tag.toLowerCase()));
+  }, [tagsInput]);
+
+  const visibleSuggestedTags = useMemo(
+    () =>
+      suggestedTags.filter((tag) => !appliedTagSet.has(tag.toLowerCase())),
+    [suggestedTags, appliedTagSet]
+  );
+
+  function handleSuggestTags() {
+    const next = suggestTags(rawText, 5);
+    setSuggestedTags(next);
+  }
+
+  function appendSuggestedTag(tag: string) {
+    setTagsInput((prev) => {
+      const existing = parseTags(prev);
+      if (existing.some((t) => t.toLowerCase() === tag.toLowerCase())) {
+        return prev;
+      }
+      const trimmed = prev.trim();
+      if (!trimmed) return tag;
+      if (trimmed.endsWith(",")) return `${trimmed} ${tag}`;
+      return `${trimmed}, ${tag}`;
+    });
+    // Hide chip immediately (also covered by appliedTagSet filter).
+    setSuggestedTags((prev) =>
+      prev.filter((t) => t.toLowerCase() !== tag.toLowerCase())
+    );
+  }
 
   function resetState() {
     setMode("link");
     setUrl("");
     setRawText("");
+    setTagsInput("");
+    setSuggestedTags([]);
     setError(null);
     setResult(null);
     setIsLoading(false);
@@ -293,6 +376,32 @@ export function ImportModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only pending import hydrate
   }, []);
 
+  // Bookmarklet clipboard handoff: show paste tip on Paste Text (or when URL/session flags it).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const fromUrl = params.get("paste") === "1";
+      const fromSession =
+        sessionStorage.getItem("chatshare_expect_paste") === "1";
+      if (fromUrl || fromSession) {
+        const src =
+          params.get("source") ||
+          sessionStorage.getItem("chatshare_paste_source") ||
+          "Gemini";
+        setPasteSourceLabel(src);
+        if (fromUrl || mode === "text") {
+          setShowPasteHint(true);
+        }
+        if (fromUrl) {
+          setMode("text");
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [mode]);
+
   function sourceModelFromResult(preview: ParsedPreview): string {
     if (preview.source === "ChatGPT") return "GPT-4o";
     if (preview.source === "Claude") return "Claude 3.5 Sonnet";
@@ -326,7 +435,7 @@ export function ImportModal({
           source: preview.source,
           source_model: sourceModelFromResult(preview),
           originalUrl: preview.originalUrl,
-          tags: [],
+          tags: parseTags(tagsInput),
           is_public: true,
         }),
       });
@@ -357,23 +466,29 @@ export function ImportModal({
   }
 
   async function handlePublish() {
-    if (!result || result.messages.length === 0) return;
+    // Prefer explicit result (link import / bookmarklet); else live text parse.
+    const preview = result ?? (mode === "text" ? livePreview : null);
+    if (!preview || preview.messages.length === 0) return;
 
     const accessToken = session?.access_token;
     if (!accessToken) {
-      // Keep `result` (draft) in state; open auth so user can continue after sign-in.
+      // Keep draft in state; open auth so user can continue after sign-in.
+      if (!result && livePreview) {
+        setResult(livePreview);
+      }
       publishAfterAuthRef.current = true;
       setAuthOpen(true);
       setError(null);
       return;
     }
 
-    await publishThread(accessToken, result);
+    await publishThread(accessToken, preview);
   }
 
   /** After sign-in/up from AuthModal, publish the draft if the user intended to. */
   async function handleAuthSuccess() {
-    if (!publishAfterAuthRef.current || !result) return;
+    const preview = result ?? (mode === "text" ? livePreview : null);
+    if (!publishAfterAuthRef.current || !preview) return;
 
     publishAfterAuthRef.current = false;
 
@@ -391,7 +506,7 @@ export function ImportModal({
       return;
     }
 
-    await publishThread(token, result);
+    await publishThread(token, preview);
   }
 
   // If auth state becomes available while a publish was deferred, resume once.
@@ -456,6 +571,7 @@ export function ImportModal({
       }
 
       setResult(preview);
+      setMode("link");
     } catch (err) {
       setResult(null);
       setError(
@@ -466,50 +582,17 @@ export function ImportModal({
     }
   }
 
-  async function handleParseText(event: FormEvent) {
-    event.preventDefault();
-    setError(null);
-    setResult(null);
-
-    const pastedText = rawText.trim();
-    if (!pastedText) {
-      setError("Please paste conversation text before parsing.");
-      return;
-    }
-
-    setIsParsingText(true);
-
-    try {
-      const response = await fetch("/api/parse-text", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: pastedText }),
-      });
-
-      const payload: unknown = await response.json();
-
-      if (!response.ok) {
-        const err = payload as { error?: string; message?: string };
-        throw new Error(
-          err.error || err.message || "Failed to parse conversation text."
-        );
-      }
-
-      const preview = normalizeParseTextPayload(payload);
-      setResult(preview);
-    } catch (err) {
-      setResult(null);
-      setError(
-        err instanceof Error ? err.message : "Failed to parse conversation text."
-      );
-    } finally {
-      setIsParsingText(false);
-    }
-  }
-
   const isBusy = isLoading || isParsingText || isPublishing;
-  const showTextForm = mode === "text" && !result && !isParsingText;
+  // Keep the paste form visible for live preview; link mode still flips to result card.
+  const showTextForm = mode === "text" && !isParsingText;
   const showLinkForm = mode === "link" && !result;
+  const showLinkResult = Boolean(result && mode === "link");
+  const publishablePreview =
+    result && mode === "link"
+      ? result
+      : mode === "text"
+        ? livePreview
+        : result;
 
   return (
     <>
@@ -538,13 +621,27 @@ export function ImportModal({
           </DialogDescription>
         </DialogHeader>
 
-        {!result ? (
+        {!showLinkResult ? (
           <Tabs
             value={mode}
             onValueChange={(value) => {
               setMode(value as ImportMode);
               setError(null);
-              setResult(null);
+              if (value === "text") {
+                // Leave raw transcript editable; clear link import card if any.
+                setResult(null);
+                try {
+                  if (sessionStorage.getItem("chatshare_expect_paste") === "1") {
+                    setShowPasteHint(true);
+                    setPasteSourceLabel(
+                      sessionStorage.getItem("chatshare_paste_source") ||
+                        "Gemini"
+                    );
+                  }
+                } catch {
+                  // ignore
+                }
+              }
             }}
             className="w-full"
           >
@@ -603,40 +700,186 @@ export function ImportModal({
 
             {showTextForm ? (
               <TabsContent value="text" className="mt-4 space-y-4">
-                <form onSubmit={handleParseText} className="space-y-4">
+                {showPasteHint ? (
+                  <div
+                    role="status"
+                    className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-950 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-50"
+                  >
+                    Conversation copied from {pasteSourceLabel}! Press{" "}
+                    <kbd className="rounded border border-indigo-300 bg-white/80 px-1 font-mono text-xs dark:border-indigo-700 dark:bg-indigo-900/60">
+                      Ctrl+V
+                    </kbd>{" "}
+                    (or{" "}
+                    <kbd className="rounded border border-indigo-300 bg-white/80 px-1 font-mono text-xs dark:border-indigo-700 dark:bg-indigo-900/60">
+                      Cmd+V
+                    </kbd>
+                    ) to paste.
+                  </div>
+                ) : null}
+                <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="home-import-text">Conversation text</Label>
-                    <Textarea
-                      id="home-import-text"
-                      value={rawText}
-                      onChange={(event) => {
-                        setRawText(event.target.value);
+                    <Label htmlFor="home-import-text">Raw Transcript</Label>
+                    <RichTextEditor
+                      content={rawText}
+                      onChange={(markdown) => {
+                        setRawText(markdown);
                         setError(null);
+                        if (markdown.trim()) {
+                          setShowPasteHint(false);
+                        }
                       }}
-                      placeholder="Paste conversation text here (e.g. copied directly from ChatGPT or Claude)..."
-                      disabled={isParsingText}
-                      className="min-h-[160px] max-h-[50vh] resize-y font-mono text-sm"
+                      placeholder="Paste a conversation transcript here... (Rich text, bolding, lists, and code blocks will be preserved!)"
+                      editable={!isPublishing}
+                      dense
+                      editorClassName="min-h-[180px]"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Paste from ChatGPT, Claude, or Gemini. Formatting becomes
+                      Markdown automatically; use{" "}
+                      <span className="font-medium text-foreground">User:</span>{" "}
+                      /{" "}
+                      <span className="font-medium text-foreground">
+                        Gemini:
+                      </span>{" "}
+                      (or Assistant) labels for turn detection. Live preview
+                      updates as you edit.
+                    </p>
                   </div>
 
-                  <Button
-                    type="submit"
-                    disabled={isParsingText}
-                    className="w-full sm:w-auto"
-                  >
-                    {isParsingText ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Parsing…
-                      </>
-                    ) : (
-                      <>
-                        <FileText className="h-4 w-4" />
-                        Parse Text
-                      </>
-                    )}
-                  </Button>
-                </form>
+                  {livePreview && livePreview.messages.length > 0 ? (
+                    <div className="mt-4 rounded-md border bg-muted/40 p-4">
+                      <h4 className="mb-2 text-sm font-semibold text-foreground">
+                        Conversation Preview
+                      </h4>
+                      <div className="max-h-64 space-y-3 overflow-y-auto">
+                        {livePreview.messages.map((msg, idx) => {
+                          const isUser = msg.role === "user";
+                          return (
+                            <div
+                              key={`${msg.role}-${idx}`}
+                              className={cn(
+                                "rounded border p-3 text-sm",
+                                isUser
+                                  ? "border-border bg-muted/50 text-foreground"
+                                  : "border-border bg-background text-foreground"
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "mb-2 inline-block rounded px-2 py-0.5 text-xs font-bold uppercase",
+                                  isUser
+                                    ? "bg-secondary text-secondary-foreground"
+                                    : "bg-primary/15 text-primary"
+                                )}
+                              >
+                                {isUser ? "USER" : "AI"}
+                              </span>
+                              <MarkdownRenderer content={msg.content} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : rawText.trim() ? (
+                    <p className="rounded-md border border-dashed px-3 py-3 text-xs text-muted-foreground">
+                      Waiting for labeled turns… Use{" "}
+                      <span className="font-medium text-foreground">User:</span>{" "}
+                      and{" "}
+                      <span className="font-medium text-foreground">
+                        Gemini:
+                      </span>
+                      /
+                      <span className="font-medium text-foreground">
+                        Assistant:
+                      </span>{" "}
+                      (date lines are ignored).
+                    </p>
+                  ) : null}
+
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-end justify-between gap-2">
+                      <Label htmlFor="home-import-tags">Tags</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleSuggestTags}
+                        disabled={isPublishing || !rawText.trim()}
+                      >
+                        <Sparkles className="h-4 w-4" />
+                        Suggest Tags
+                      </Button>
+                    </div>
+                    <Input
+                      id="home-import-tags"
+                      value={tagsInput}
+                      onChange={(event) => setTagsInput(event.target.value)}
+                      placeholder="react, nextjs, authentication"
+                      disabled={isPublishing}
+                      autoComplete="off"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Separate tags with commas. They are stored with the
+                      published thread.
+                    </p>
+                    {visibleSuggestedTags.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                        {visibleSuggestedTags.map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => appendSuggestedTag(tag)}
+                            className="focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            aria-label={`Add tag ${tag}`}
+                          >
+                            <Badge
+                              variant="outline"
+                              className="cursor-pointer border-dashed hover:border-primary hover:bg-primary/5"
+                            >
+                              + {tag}
+                            </Badge>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      onClick={() => void handlePublish()}
+                      disabled={
+                        !livePreview || isPublishing || isAuthLoading
+                      }
+                    >
+                      {isPublishing ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Publishing…
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-4 w-4" />
+                          {session ? "Publish Thread" : "Sign in & Publish"}
+                        </>
+                      )}
+                    </Button>
+                    {rawText.trim() ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={isPublishing}
+                        onClick={() => {
+                          setRawText("");
+                          setError(null);
+                          setResult(null);
+                        }}
+                      >
+                        Clear
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
 
                 <BookmarkletCard />
               </TabsContent>
@@ -674,51 +917,73 @@ export function ImportModal({
           </div>
         ) : null}
 
-        {result && !isLoading && !isParsingText ? (
+        {showLinkResult && !isLoading && !isParsingText ? (
           <div className="space-y-4">
             <div className="space-y-4 rounded-lg border p-4">
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary">{result.source}</Badge>
-                  {result.verified ? (
+                  <Badge variant="secondary">{result!.source}</Badge>
+                  {result!.verified ? (
                     <Badge variant="outline">Verified</Badge>
                   ) : null}
                   <span className="text-xs text-muted-foreground">
-                    {result.messages.length} messages
+                    {result!.messages.length} messages
                   </span>
                 </div>
                 <h3 className="text-lg font-semibold leading-snug">
-                  {result.title}
+                  {result!.title}
                 </h3>
-                {result.originalUrl ? (
+                {result!.originalUrl ? (
                   <p className="break-all text-xs text-muted-foreground">
-                    {result.originalUrl}
+                    {result!.originalUrl}
                   </p>
                 ) : null}
               </div>
 
               <ul className="max-h-72 space-y-3 overflow-y-auto pr-1">
-                {result.messages.map((message, index) => (
+                {result!.messages.map((message, index) => (
                   <li
                     key={`${message.role}-${index}`}
-                    className="rounded-md border bg-muted/40 p-3 text-left"
+                    className={cn(
+                      "rounded-md border p-3 text-left",
+                      message.role === "user"
+                        ? "bg-muted/50 text-foreground"
+                        : "bg-card text-card-foreground"
+                    )}
                   >
-                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {message.role === "user" ? "User" : "AI"}
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {message.role === "user" ? "USER" : "AI"}
                     </p>
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {message.content}
-                    </p>
+                    <MarkdownRenderer content={message.content} />
                   </li>
                 ))}
               </ul>
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="home-import-tags-preview">Tags</Label>
+              <Input
+                id="home-import-tags-preview"
+                value={tagsInput}
+                onChange={(event) => setTagsInput(event.target.value)}
+                placeholder="react, nextjs, authentication"
+                disabled={isPublishing}
+                autoComplete="off"
+              />
+              <p className="text-xs text-muted-foreground">
+                Separate tags with commas.
+              </p>
+            </div>
+
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
-                onClick={handlePublish}
-                disabled={isPublishing || isAuthLoading}
+                onClick={() => void handlePublish()}
+                disabled={
+                  isPublishing ||
+                  isAuthLoading ||
+                  !publishablePreview
+                }
               >
                 {isPublishing ? (
                   <>

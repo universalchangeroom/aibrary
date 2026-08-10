@@ -1,0 +1,10 @@
+# Chatshare Tech Stack & Rules
+- Frontend: Next.js 14 (App Router), React, TypeScript
+- Styling: Tailwind CSS, shadcn/ui components
+- Backend/Database: Supabase (PostgreSQL)
+- Rules: 
+  - Always use TypeScript with strict typing.
+  - Keep components modular and in a `/components` directory.
+  - Do not use deprecated React patterns.
+  - Use lucide-react for icons.
+  

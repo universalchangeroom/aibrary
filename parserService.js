@@ -998,6 +998,31 @@ const SPEAKER_SPLIT = new RegExp(`(?=^${SPEAKER_LABEL}\\s*:)`, "gim");
 const SPEAKER_LINE = new RegExp(`^${SPEAKER_LABEL}\\s*:\\s*([\\s\\S]*)$`, "i");
 const SPEAKER_LABEL_ONLY = new RegExp(`^(${SPEAKER_LABEL})\\s*:`, "i");
 
+const DATETIME_LINE_RES = [
+  /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*,?\s+[A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?(?:\s+at\s+|\s+[,·|]\s*|\s+)\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?\.?$/i,
+  /^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|January|February|March|April|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?(?:\s+at\s+|\s+)\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?\.?$/i,
+  /^(?:\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2})(?:\s+[T,]?\s*\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)?\.?$/i,
+  /^(?:Today|Yesterday)\s+(?:at\s+)?\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?\.?$/i,
+  /^\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)\.?$/i,
+];
+
+function isDateTimeHeaderLine(line) {
+  const trimmed = String(line || "").trim();
+  if (!trimmed || trimmed.length > 80) return false;
+  if (SPEAKER_LABEL_ONLY.test(trimmed)) return false;
+  return DATETIME_LINE_RES.some((re) => re.test(trimmed));
+}
+
+function stripDateTimeHeaders(text) {
+  return String(text || "")
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .filter((line) => !isDateTimeHeaderLine(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function normalizeSpeakerLabel(label) {
   return String(label || "")
     .trim()
@@ -1151,7 +1176,7 @@ function parseRawText(text) {
     return { source: "Pasted Text", title: "Imported Thread", messages: [] };
   }
 
-  const raw = text.replace(/^\uFEFF/, "").trim();
+  const raw = stripDateTimeHeaders(text.replace(/^\uFEFF/, "").trim());
   if (!raw) {
     return { source: "Pasted Text", title: "Imported Thread", messages: [] };
   }
@@ -1224,7 +1249,10 @@ function parseRawText(text) {
   }
 
   for (const chunk of chunks) {
-    const trimmed = chunk.trim();
+    let trimmed = chunk.trim();
+    if (!trimmed) continue;
+
+    trimmed = stripDateTimeHeaders(trimmed);
     if (!trimmed) continue;
 
     const labelMatch = trimmed.match(SPEAKER_LABEL_ONLY);
@@ -1242,7 +1270,12 @@ function parseRawText(text) {
 
     const label = labelMatch[1];
     const bodyMatch = trimmed.match(SPEAKER_LINE);
-    const body = bodyMatch ? bodyMatch[1].trim() : "";
+    let body = bodyMatch ? bodyMatch[1].trim() : "";
+    body = body
+      .split(/\r?\n/)
+      .filter((line) => !isDateTimeHeaderLine(line))
+      .join("\n")
+      .trim();
 
     const labelNorm = normalizeSpeakerLabel(label);
     if (labelNorm === "chatgpt") sawChatGpt = true;
