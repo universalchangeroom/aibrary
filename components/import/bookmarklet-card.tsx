@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 
-import { buildImportBookmarklet } from "@/lib/bookmarklet";
+import {
+  buildImportBookmarklet,
+  resolveChatShareOrigin,
+} from "@/lib/bookmarklet";
 import { cn } from "@/lib/utils";
 
 interface BookmarkletCardProps {
@@ -11,18 +14,18 @@ interface BookmarkletCardProps {
 
 /**
  * Draggable ChatShare bookmarklet install card.
- * Payload comes from buildImportBookmarklet (DeepSeek, Claude, Gemini scrapers).
+ * Payload copies labeled chat text to the clipboard (CSP-safe), then opens /share.
  */
 export function BookmarkletCard({ className }: BookmarkletCardProps) {
   const [appOrigin, setAppOrigin] = useState("");
 
   useEffect(() => {
-    setAppOrigin(window.location.origin);
+    setAppOrigin(resolveChatShareOrigin(window.location.origin));
   }, []);
 
   const bookmarkletScript = appOrigin
     ? buildImportBookmarklet(appOrigin)
-    : undefined;
+    : buildImportBookmarklet(resolveChatShareOrigin());
 
   return (
     <div
@@ -36,24 +39,28 @@ export function BookmarkletCard({ className }: BookmarkletCardProps) {
           ⚡ 1-Click Browser Bookmarklet
         </p>
         <p className="text-sm leading-relaxed text-muted-foreground">
-          Drag this button to your browser&apos;s Bookmarks Bar to import chats
-          directly from DeepSeek, Claude, Gemini, or ChatGPT in one click:
+          Drag this button to your browser&apos;s Bookmarks Bar. On Gemini,
+          Claude, DeepSeek, or ChatGPT it copies the chat and opens ChatShare
+          for paste (no cross-site fetch — works with strict CSPs):
         </p>
       </div>
 
       <a
         href={bookmarkletScript}
-        draggable={Boolean(bookmarkletScript)}
+        draggable
         onClick={(e) => e.preventDefault()}
         className="inline-block cursor-grab rounded-md bg-indigo-600 px-4 py-2 font-medium text-white shadow hover:bg-indigo-700 active:cursor-grabbing"
-        title="Drag to your bookmarks bar, then open a DeepSeek, Claude, Gemini, or ChatGPT chat and click the bookmark"
+        title="Drag to your bookmarks bar"
       >
         + Import to ChatShare
       </a>
 
       <p className="text-xs text-muted-foreground">
-        Then open a DeepSeek, Claude, Gemini, or ChatGPT conversation tab and
-        click the bookmark (ChatShare must be running).
+        Opens{" "}
+        <span className="font-mono">
+          {appOrigin || "http://localhost:3001"}
+        </span>
+        /share after copying. Re-drag the button if you change ports.
       </p>
     </div>
   );
