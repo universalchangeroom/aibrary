@@ -39,6 +39,16 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
     notFound();
   }
 
+  // Non-authors must not open unpublished (pending_review) threads via direct URL.
+  // (RLS already hides them; this is a belt-and-suspenders check for the owner path.)
+  const isOwner = user?.id && data.author_id === user.id;
+  const isPublishedPublic =
+    data.is_public === true &&
+    (data.status == null || data.status === "published");
+  if (!isOwner && !isPublishedPublic) {
+    notFound();
+  }
+
   const footnotes = asFootnotes(data.footnotes);
   const footnoteIds = footnotes.map((footnote) => footnote.id);
 

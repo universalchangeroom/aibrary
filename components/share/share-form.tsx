@@ -120,15 +120,16 @@ export function ShareForm() {
     try {
       const supabase = createClient();
       const {
-        data: { user },
+        data: { session },
         error: authError,
-      } = await supabase.auth.getUser();
+      } = await supabase.auth.getSession();
 
       if (authError) {
         throw authError;
       }
 
-      if (!user) {
+      const accessToken = session?.access_token;
+      if (!accessToken || !session.user) {
         setError("You must be signed in to publish a chat.");
         setIsSubmitting(false);
         return;
@@ -136,20 +137,46 @@ export function ShareForm() {
 
       const tags = parseTags(tagsInput);
 
-      const { error: insertError } = await supabase.from("threads").insert({
-        author_id: user.id,
-        title: trimmedTitle,
-        source_model: sourceModel,
-        tags,
-        content,
-        is_public: true,
+      const response = await fetch("/api/threads", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          title: trimmedTitle,
+          source_model: sourceModel,
+          tags,
+          content,
+          is_public: true,
+        }),
       });
 
-      if (insertError) {
-        throw insertError;
+      const payload = (await response.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: string;
+        message?: string;
+        data?: { id?: string; status?: string };
+      };
+
+      if (!response.ok || !payload.success || !payload.data?.id) {
+        throw new Error(payload.error || "Failed to publish thread.");
       }
 
-      router.push("/feed");
+      if (
+        payload.data.status === "pending_review" ||
+        (typeof payload.message === "string" && payload.message)
+      ) {
+        if (typeof window !== "undefined") {
+          window.sessionStorage.setItem(
+            "chatshare_publish_notice",
+            payload.message ||
+              "Your thread contains image content and has been submitted for admin review before appearing on the public feed."
+          );
+        }
+      }
+
+      router.push(`/feed/${payload.data.id}`);
       router.refresh();
     } catch (err) {
       const message =

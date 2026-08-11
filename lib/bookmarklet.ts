@@ -10,7 +10,7 @@ export const CHATSHARE_PENDING_HASH_KEY = "chatshare_pending";
  * Defaults to http://localhost:3001 when origin is missing.
  *
  * Avoids cross-origin fetch (CSP-safe on gemini.google.com): extracts DOM as
- * Markdown (preserving bold/italic/code/lists), copies to clipboard, then opens
+ * Markdown (bold/italic/code/lists/images), copies to clipboard, then opens
  * ChatShare /share for paste.
  */
 export function resolveChatShareOrigin(appOrigin?: string): string {
@@ -36,6 +36,160 @@ if(arr[j]!==el&&arr[j].contains&&arr[j].contains(el))return false;
 return true;
 });
 }
+function resolveImgSrc(img){
+if(!img)return"";
+var src=img.getAttribute? (img.getAttribute("src")||img.getAttribute("data-src")||img.getAttribute("data-lazy-src")||img.getAttribute("data-original")||img.getAttribute("data-image-url")||"") : "";
+try{if(img.currentSrc&&String(img.currentSrc).indexOf("http")===0)src=img.currentSrc;}catch(e0){}
+try{if((!src||src.indexOf("blob:")===0||src.indexOf("data:")===0)&&img.src&&String(img.src).indexOf("http")===0)src=img.src;}catch(e1){}
+if((!src||src.indexOf("data:")===0)&&img.getAttribute){
+var ss=img.getAttribute("srcset")||img.getAttribute("data-srcset")||"";
+if(ss){
+var first=String(ss).split(",")[0]||"";
+var u=first.replace(/\\s+\\d+[wx]$/i,"").replace(/^\\s+|\\s+$/g,"");
+if(u)src=u;
+}
+}
+/* ChatGPT sometimes wraps the full-res file URL on a parent <a download>. */
+if((!src||src.indexOf("blob:")===0)&&img.closest){
+try{
+var a=img.closest("a[href]");
+if(a){
+var href=a.getAttribute("href")||a.href||"";
+if(href&&/estuary|oaidalle|oaiusercontent|dalle|backend-api|\\.(png|jpe?g|webp|gif)(\\?|$)/i.test(href))src=href;
+}
+}catch(eA){}
+}
+if(src&&src.indexOf("//")===0)src="https:"+src;
+try{
+if(src&&src.charAt(0)==="/"&&src.charAt(1)!=="/"&&typeof location!=="undefined"&&location.origin){
+src=String(location.origin)+src;
+}
+}catch(eAbs){}
+return String(src||"").replace(/^\\s+|\\s+$/g,"");
+}
+function isGeneratedImageSrc(src){
+if(!src)return false;
+return /estuary|oaidalleapiprodscus|oaiusercontent\\.com|images\\.openai|\\/backend-api\\/(estuary|files|content)|dall[\\-_]?e|filesystem\\.site\\/cdn|file-.*\\.openai/i.test(String(src));
+}
+function imgAltText(img){
+if(!img||!img.getAttribute)return"";
+return String(img.getAttribute("alt")||img.getAttribute("aria-label")||img.getAttribute("title")||"").replace(/[\\[\\]\\r\\n]/g," ").replace(/^\\s+|\\s+$/g,"");
+}
+function isGeneratedImage(img){
+if(!img)return false;
+var src=resolveImgSrc(img);
+var alt=imgAltText(img).toLowerCase();
+if(isGeneratedImageSrc(src))return true;
+if(/generated\\s*image/.test(alt))return true;
+if(img.getAttribute){
+var s=String(img.getAttribute("src")||"")+String(img.getAttribute("data-src")||"");
+if(/estuary|oaidalleapiprodscus|oaiusercontent|dalle/i.test(s))return true;
+}
+return false;
+}
+function isContentImage(img){
+if(!img||!img.getAttribute)return false;
+if(isGeneratedImage(img))return true;
+var src=resolveImgSrc(img);
+if(!src)return false;
+if(src.indexOf("data:image/svg")===0)return false;
+if(src.indexOf("data:image/gif;base64,R0lGODlh")===0)return false;
+if(src.indexOf("data:")===0&&src.length<400)return false;
+var w=parseInt(img.getAttribute("width")||0,10)||0;
+var h=parseInt(img.getAttribute("height")||0,10)||0;
+try{if(!w&&img.naturalWidth)w=img.naturalWidth;if(!h&&img.naturalHeight)h=img.naturalHeight;}catch(e3){}
+try{if(!w&&img.width)w=img.width;if(!h&&img.height)h=img.height;}catch(e4){}
+if((w&&w>0&&w<40)||(h&&h>0&&h<40))return false;
+if(w&&h&&w*h>0&&w*h<2000)return false;
+var cls=String(img.className||"").toLowerCase();
+var al=imgAltText(img).toLowerCase();
+var aria=String(img.getAttribute("aria-label")||"").toLowerCase();
+var role=String(img.getAttribute("role")||"").toLowerCase();
+if(role==="presentation"||img.getAttribute("aria-hidden")==="true")return false;
+var junk=/(avatar|logo|icon|emoji|reaction|thumb|thumbs|badge|spinner|loading|profile|user-pic|favicon|star|rating|check|chevron|arrow|close|dismiss)/i;
+if(junk.test(cls)||junk.test(al)||junk.test(aria))return false;
+var p=img.parentElement||img.parentNode;
+var depth=0;
+while(p&&depth<6){
+var pt=(p.tagName||"").toLowerCase();
+var pc=String(p.className||"").toLowerCase();
+var pid=String(p.id||"").toLowerCase();
+if(pt==="button"||pt==="nav"||pt==="header"||pt==="footer"||pt==="aside")return false;
+if(junk.test(pc)||junk.test(pid))return false;
+if(p.getAttribute&&p.getAttribute("role")==="toolbar")return false;
+p=p.parentElement||p.parentNode;
+depth++;
+}
+return true;
+}
+function imgToMd(img){
+if(!isContentImage(img))return"";
+var src=resolveImgSrc(img);
+if(!src)return"";
+if(src.indexOf("//")===0)src="https:"+src;
+var alt=imgAltText(img);
+if(isGeneratedImage(img)){
+if(!alt)alt="Generated Image";
+}else{
+if(!alt||/^(image|img|photo|picture|media)$/i.test(alt))alt="Image Description";
+}
+return "\\n\\n!["+alt+"]("+src+")\\n\\n";
+}
+function harvestImages(root,preferGenerated){
+if(!root||!root.querySelectorAll)return[];
+var out=[],seen={},imgs,list=[],i,img,src,md,sel,j;
+try{
+sel='img[src*="estuary"],img[src*="oaidalleapiprodscus"],img[src*="oaiusercontent"],img[src*="dalle"],img[data-src*="estuary"],img[data-src*="oaidalleapiprodscus"],img[data-src*="oaiusercontent"],img[alt*="Generated image"],img[alt*="Generated Image"],img[alt*="generated image"]';
+imgs=root.querySelectorAll(sel);
+if(imgs&&imgs.length){for(i=0;i<imgs.length;i++)list.push(imgs[i]);}
+imgs=root.querySelectorAll("img");
+if(imgs&&imgs.length){for(i=0;i<imgs.length;i++)list.push(imgs[i]);}
+}catch(eH){
+try{imgs=root.querySelectorAll("img");if(imgs){for(i=0;i<imgs.length;i++)list.push(imgs[i]);}}catch(e2){}
+}
+for(j=0;j<list.length;j++){
+img=list[j];
+src=resolveImgSrc(img);
+if(!src||seen[src])continue;
+if(preferGenerated){
+if(!isGeneratedImage(img)&&!isContentImage(img))continue;
+}else if(!isContentImage(img)){
+continue;
+}
+seen[src]=1;
+md=String(imgToMd(img)||"").replace(/^\\s+|\\s+$/g,"");
+if(md)out.push(md);
+}
+return out;
+}
+function appendMissingImages(text,imgs){
+var t=String(text||"");
+var i,md,srcMatch,src;
+for(i=0;i<(imgs||[]).length;i++){
+md=imgs[i];
+srcMatch=String(md).match(/!\\[[^\\]]*\\]\\(([^)]+)\\)/);
+src=srcMatch?srcMatch[1]:"";
+if(src&&t.indexOf(src)>=0)continue;
+if(md&&t.indexOf(md)>=0)continue;
+t=(t?t.replace(/\\s+$/,"")+"\\n\\n":"")+md;
+}
+return t;
+}
+function mergeImageLists(a,b){
+var out=[],seen={},i,md,m,src;
+function add(list){
+for(i=0;i<(list||[]).length;i++){
+md=list[i];
+m=String(md).match(/!\\[[^\\]]*\\]\\(([^)]+)\\)/);
+src=m?m[1]:md;
+if(!src||seen[src])continue;
+seen[src]=1;
+out.push(md);
+}
+}
+add(a);add(b);
+return out;
+}
 function htmlToMd(root){
 if(!root)return"";
 function walk(node){
@@ -46,6 +200,25 @@ return String(node.nodeValue||"").replace(/\\u00a0/g," ");
 if(node.nodeType!==1)return"";
 var tag=(node.tagName||"").toLowerCase();
 if(tag==="script"||tag==="style"||tag==="svg"||tag==="button"||tag==="noscript"||tag==="textarea"||tag==="input"||tag==="select")return"";
+if(tag==="img")return imgToMd(node);
+if(tag==="picture"){
+var picImg=node.querySelector?node.querySelector("img"):null;
+return picImg?imgToMd(picImg):"";
+}
+if(tag==="figure"){
+var figImg=node.querySelector?node.querySelector("img"):null;
+var kidsF="",fi,fc;
+for(fi=0;fi<node.childNodes.length;fi++){
+fc=node.childNodes[fi];
+if(fc===figImg||(fc.nodeType===1&&(fc.tagName||"").toLowerCase()==="img"))continue;
+if(fc.nodeType===1&&(fc.tagName||"").toLowerCase()==="picture")continue;
+kidsF+=walk(fc);
+}
+var imgMd=figImg?imgToMd(figImg):"";
+var cap=kidsF.replace(/^\\s+|\\s+$/g,"");
+if(imgMd&&cap)return imgMd+cap+"\\n\\n";
+return imgMd||(cap?cap+"\\n\\n":"");
+}
 if(tag==="pre"){
 var codeEl=node.querySelector?node.querySelector("code"):null;
 var lang="";
@@ -242,7 +415,7 @@ if(h.indexOf("chatgpt.com")<0&&h.indexOf("chat.openai.com")<0)return null;
 var nodes=document.querySelectorAll('[data-message-author-role]');
 if(!nodes.length)nodes=document.querySelectorAll('[data-testid*="conversation-turn"]');
 if(!nodes.length)return null;
-var parts=[],i,n,role,txt,md;
+var parts=[],i,n,role,txt,md,imgs,asstRoot,turnRoot;
 for(i=0;i<nodes.length;i++){
 n=nodes[i];
 role=(n.getAttribute("data-message-author-role")||"").toLowerCase();
@@ -252,10 +425,28 @@ else if(n.querySelector&&n.querySelector('[data-message-author-role="assistant"]
 }
 md=n.querySelector? (n.querySelector(".markdown")||n.querySelector('[class*="markdown"]')||n.querySelector(".prose")||n):n;
 txt=cleanChrome(htmlToMd(md||n));
+if(role==="assistant"||role==="system"){
+/* Full turn root — gen images often live outside .markdown (galleries). */
+turnRoot=n;
+asstRoot=n;
+if(n.closest){
+try{
+turnRoot=n.closest('[data-testid*="conversation-turn"]')||n.closest("article")||n.parentElement||n;
+}catch(eT){turnRoot=n;}
+}
+imgs=mergeImageLists(harvestImages(n,true),harvestImages(turnRoot,true));
+if(md&&md!==n)imgs=mergeImageLists(imgs,harvestImages(md,true));
+/* Image-only turns: empty text + at least one img → emit Markdown so the turn is kept. */
+if(!String(txt||"").replace(/^\\s+|\\s+$/g,"")&&imgs.length===0){
+imgs=mergeImageLists(imgs,harvestImages(turnRoot,false));
+}
+txt=appendMissingImages(txt,imgs);
+if(!String(txt||"").replace(/^\\s+|\\s+$/g,""))continue;
+parts.push("ChatGPT:\\n"+txt);
+}else{
 if(!txt)continue;
-if(role==="user")parts.push("User:\\n"+txt);
-else if(role==="assistant"||role==="system")parts.push("ChatGPT:\\n"+txt);
-else parts.push("User:\\n"+txt);
+parts.push("User:\\n"+txt);
+}
 }
 return parts.length?parts.join("\\n\\n"):null;
 }

@@ -1006,13 +1006,31 @@ const DATETIME_LINE_RES = [
   /^\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)\.?$/i,
 ];
 
+/** Markdown image line or line containing `![alt](url)` — never strip these. */
+function containsMarkdownImage(line) {
+  return /!\[[^\]]*\]\([^)\s]+[^)]*\)/.test(String(line || ""));
+}
+
+/** True when a turn has plain text and/or image Markdown (not empty whitespace). */
+function hasTurnContent(text) {
+  const t = String(text || "").trim();
+  if (!t) return false;
+  return containsMarkdownImage(t) || t.length > 0;
+}
+
 function isDateTimeHeaderLine(line) {
   const trimmed = String(line || "").trim();
   if (!trimmed || trimmed.length > 80) return false;
+  // Preserve markdown images (ChatGPT estuary / DALL·E tags from the bookmarklet).
+  if (containsMarkdownImage(trimmed) || trimmed.startsWith("![")) return false;
   if (SPEAKER_LABEL_ONLY.test(trimmed)) return false;
   return DATETIME_LINE_RES.some((re) => re.test(trimmed));
 }
 
+/**
+ * Remove standalone date/time header lines. Leaves Markdown image tags intact
+ * so estuary / DALL·E `![Generated Image](url)` lines survive for previews.
+ */
 function stripDateTimeHeaders(text) {
   return String(text || "")
     .replace(/^\uFEFF/, "")
@@ -1115,7 +1133,11 @@ function extractInlineReasoning(body) {
  */
 function buildAssistantMessage(content, reasoning) {
   const extracted = extractInlineReasoning(content);
-  const main = extracted.content;
+  // Prefer trimmed main body; fall back to raw content when it is image-only Markdown.
+  let main = String(extracted.content || "").trim();
+  if (!main && containsMarkdownImage(content)) {
+    main = String(content || "").trim();
+  }
   const reasonParts = [reasoning, extracted.reasoning].filter(
     (part) => typeof part === "string" && part.trim()
   );
@@ -1123,11 +1145,12 @@ function buildAssistantMessage(content, reasoning) {
     ? reasonParts.join("\n\n").trim()
     : undefined;
 
-  if (!main && !mergedReasoning) {
+  // Keep image-only assistant turns (no plain text beyond ![alt](url)).
+  if (!hasTurnContent(main) && !mergedReasoning) {
     return null;
   }
 
-  if (!main && mergedReasoning) {
+  if (!hasTurnContent(main) && mergedReasoning) {
     return {
       role: "assistant",
       content: mergedReasoning,
@@ -1271,9 +1294,10 @@ function parseRawText(text) {
     const label = labelMatch[1];
     const bodyMatch = trimmed.match(SPEAKER_LINE);
     let body = bodyMatch ? bodyMatch[1].trim() : "";
+    // Never drop Markdown image lines (`![alt](url)`).
     body = body
       .split(/\r?\n/)
-      .filter((line) => !isDateTimeHeaderLine(line))
+      .filter((line) => containsMarkdownImage(line) || !isDateTimeHeaderLine(line))
       .join("\n")
       .trim();
 
@@ -1291,19 +1315,22 @@ function parseRawText(text) {
     if (isUserLabel(label)) {
       // User turns don't take pending thought blocks; attach them to prior assistant if any.
       flushReasoningOntoLastAssistant();
-      if (!body) continue;
+      // Keep user turns that are solely image Markdown too.
+      if (!hasTurnContent(body)) continue;
       messages.push({ role: "user", content: body });
       continue;
     }
 
     // Assistant-class: DeepSeek, ChatGPT, Claude, Assistant, etc.
     // Merge consecutive assistant blocks when no User:/Human: is between them.
+    // Image-only assistant bodies (`![alt](url)` with no other text) must be kept.
     const reasoning =
       pendingReasoning.length > 0
         ? pendingReasoning.join("\n\n").trim()
         : undefined;
     pendingReasoning = [];
 
+    if (!hasTurnContent(body) && !reasoning) continue;
     appendAssistantMessage(body, reasoning);
   }
 

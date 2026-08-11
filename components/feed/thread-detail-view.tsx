@@ -174,9 +174,23 @@ export function ThreadDetailView({
 
   useEffect(() => {
     if (!showSuccessToast) return;
-    const timer = window.setTimeout(() => setShowSuccessToast(false), 2800);
+    const longNotice = successToastMessage.length > 80;
+    const timer = window.setTimeout(
+      () => setShowSuccessToast(false),
+      longNotice ? 7000 : 2800
+    );
     return () => window.clearTimeout(timer);
-  }, [showSuccessToast]);
+  }, [showSuccessToast, successToastMessage]);
+
+  // Surface publish flow notice (e.g. image content held for admin review).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const notice = window.sessionStorage.getItem("chatshare_publish_notice");
+    if (!notice) return;
+    window.sessionStorage.removeItem("chatshare_publish_notice");
+    showToast(notice);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+  }, []);
 
   function showToast(message: string) {
     setSuccessToastMessage(message);
@@ -289,10 +303,12 @@ export function ThreadDetailView({
       const payload = (await response.json().catch(() => null)) as {
         success?: boolean;
         error?: string;
+        message?: string;
         data?: {
           title?: string;
           content?: unknown;
           messages?: unknown;
+          status?: string;
           updated_at?: string;
         };
       } | null;
@@ -319,6 +335,10 @@ export function ThreadDetailView({
             ? payload.data!.title
             : title,
         content: nextContent,
+        status:
+          typeof payload.data!.status === "string"
+            ? payload.data!.status
+            : prev.status,
         updated_at:
           typeof payload.data!.updated_at === "string"
             ? payload.data!.updated_at
@@ -327,7 +347,11 @@ export function ThreadDetailView({
       setEditLayout("cards");
       setIsEditing(false);
       setSaveError(null);
-      showToast("Thread updated successfully!");
+      if (payload.message) {
+        showToast(payload.message);
+      } else {
+        showToast("Thread updated successfully!");
+      }
     } catch (error) {
       setSaveError(
         error instanceof Error
@@ -475,9 +499,19 @@ export function ThreadDetailView({
       {showSuccessToast ? (
         <div
           role="status"
-          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-900 shadow-md"
+          className="fixed bottom-6 left-1/2 z-50 max-w-md -translate-x-1/2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-900 shadow-md"
         >
           {successToastMessage}
+        </div>
+      ) : null}
+
+      {isOwner && thread.status === "pending_review" ? (
+        <div
+          role="status"
+          className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+        >
+          Your thread contains image content and has been submitted for admin
+          review before appearing on the public feed.
         </div>
       ) : null}
 

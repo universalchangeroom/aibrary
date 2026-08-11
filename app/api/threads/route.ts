@@ -1,6 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
+import {
+  IMAGE_REVIEW_MESSAGE,
+  resolveThreadStatusForContent,
+} from "@/lib/thread-status";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -184,6 +189,10 @@ export async function POST(request: Request) {
     console.warn("[api/threads] profile upsert:", profileError.message);
   }
 
+  // Image Markdown in any turn → hold for admin review off the public feed.
+  const status = resolveThreadStatusForContent(content);
+  const pendingReview = status === "pending_review";
+
   const { data: thread, error: insertError } = await supabase
     .from("threads")
     .insert({
@@ -193,8 +202,9 @@ export async function POST(request: Request) {
       source_model: sourceModel,
       tags,
       is_public: isPublic,
+      status,
     })
-    .select("id, title, created_at")
+    .select("id, title, created_at, status")
     .single();
 
   if (insertError || !thread) {
@@ -210,11 +220,13 @@ export async function POST(request: Request) {
   return NextResponse.json(
     {
       success: true,
+      ...(pendingReview ? { message: IMAGE_REVIEW_MESSAGE } : {}),
       data: {
         id: thread.id,
         title: thread.title,
         created_at: thread.created_at,
         author_id: user.id,
+        status: thread.status ?? status,
       },
     },
     { status: 201 }

@@ -3,11 +3,19 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Loader2, LogOut, Share2, UserRound } from "lucide-react";
+import {
+  ChevronDown,
+  Loader2,
+  LogOut,
+  Share2,
+  Shield,
+  UserRound,
+} from "lucide-react";
 
 import { AuthModal } from "@/components/auth/auth-modal";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
+import { isAdminEmail } from "@/lib/admin";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -136,6 +144,17 @@ export function AuthNav() {
                 <p className="text-xs text-muted-foreground">Signed in</p>
               </div>
             </div>
+            {isAdminEmail(user.email) ? (
+              <Link
+                href="/admin/moderation"
+                role="menuitem"
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                onClick={() => setMenuOpen(false)}
+              >
+                <Shield className="h-4 w-4" />
+                Moderation
+              </Link>
+            ) : null}
             <button
               type="button"
               role="menuitem"

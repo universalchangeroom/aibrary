@@ -2,6 +2,10 @@ import { createClient as createSupabaseJsClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
+import {
+  IMAGE_REVIEW_MESSAGE,
+  resolveThreadStatusForContent,
+} from "@/lib/thread-status";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -213,17 +217,22 @@ export async function PUT(
     );
   }
 
+  // Image Markdown → hold off public feed until admin approves.
+  const status = resolveThreadStatusForContent(messages);
+  const pendingReview = status === "pending_review";
+
   const { data: updated, error: updateError } = await supabase
     .from("threads")
     .update({
       title,
       content: messages,
+      status,
       updated_at: new Date().toISOString(),
     })
     .eq("id", threadId)
     .eq("author_id", user.id)
     .select(
-      "id, author_id, title, content, source_model, tags, is_public, created_at, updated_at"
+      "id, author_id, title, content, source_model, tags, is_public, status, created_at, updated_at"
     )
     .single();
 
@@ -240,6 +249,7 @@ export async function PUT(
   return NextResponse.json(
     {
       success: true,
+      ...(pendingReview ? { message: IMAGE_REVIEW_MESSAGE } : {}),
       data: {
         id: updated.id,
         author_id: updated.author_id,
@@ -250,6 +260,7 @@ export async function PUT(
         source_model: updated.source_model,
         tags: updated.tags,
         is_public: updated.is_public,
+        status: updated.status ?? status,
         created_at: updated.created_at,
         updated_at: updated.updated_at,
       },

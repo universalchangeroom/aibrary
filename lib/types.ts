@@ -7,6 +7,9 @@ export interface ChatMessage {
 export type VoteTargetType = "thread" | "footnote";
 export type VoteValue = 1 | -1;
 
+/** Moderation status for public feed visibility. */
+export type ThreadStatus = "published" | "pending_review";
+
 /** Row shape for `public.threads`. */
 export interface Thread {
   id: string;
@@ -16,6 +19,8 @@ export interface Thread {
   source_model: string | null;
   tags: string[];
   is_public: boolean;
+  /** published = public feed; pending_review = image content awaiting admin */
+  status?: ThreadStatus | string;
   created_at: string;
   updated_at: string;
 }

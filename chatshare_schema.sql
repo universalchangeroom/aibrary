@@ -54,14 +54,23 @@ create table public.threads (
   source_model text,
   tags text[] not null default '{}',
   is_public boolean not null default false,
+  -- published = public feed; pending_review = image content awaiting admin
+  status text not null default 'published'
+    check (status in ('published', 'pending_review')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 comment on table public.threads is 'Shared AI chat conversations.';
+comment on column public.threads.status is
+  'Moderation state: published (public feed) or pending_review (image content awaiting admin).';
 
 create index threads_author_id_idx on public.threads (author_id);
 create index threads_tags_idx on public.threads using gin (tags);
+create index threads_status_idx on public.threads (status);
+create index threads_public_published_idx
+  on public.threads (created_at desc)
+  where is_public = true and status = 'published';
 
 -- ----------------------------------------------------------------------------
 -- 3. FOOTNOTES (misinformation annotations on threads)
@@ -113,11 +122,14 @@ create policy "Users can update their own profile"
 -- ----------------------------------------------------------------------------
 -- THREADS policies
 -- ----------------------------------------------------------------------------
--- Anyone can read public threads; authors can always read their own.
+-- Public feed: is_public + published. Authors can always read their own (any status).
 create policy "Public threads are viewable by everyone"
   on public.threads for select
   to anon, authenticated
-  using (is_public or (select auth.uid()) = author_id);
+  using (
+    (is_public = true and status = 'published')
+    or (select auth.uid()) = author_id
+  );
 
 create policy "Users can create their own threads"
   on public.threads for insert
@@ -147,7 +159,10 @@ create policy "Footnotes on visible threads are viewable"
       select 1
       from public.threads t
       where t.id = thread_id
-        and (t.is_public or t.author_id = (select auth.uid()))
+        and (
+          (t.is_public = true and t.status = 'published')
+          or t.author_id = (select auth.uid())
+        )
     )
   );
 
@@ -161,7 +176,10 @@ create policy "Users can add footnotes to visible threads"
       select 1
       from public.threads t
       where t.id = thread_id
-        and (t.is_public or t.author_id = (select auth.uid()))
+        and (
+          (t.is_public = true and t.status = 'published')
+          or t.author_id = (select auth.uid())
+        )
     )
   );
 

@@ -443,7 +443,8 @@ export function ImportModal({
       const payload = (await response.json().catch(() => ({}))) as {
         success?: boolean;
         error?: string;
-        data?: { id?: string };
+        message?: string;
+        data?: { id?: string; status?: string };
       };
 
       if (!response.ok || !payload.success || !payload.data?.id) {
@@ -451,6 +452,17 @@ export function ImportModal({
       }
 
       const threadId = payload.data.id;
+      const pending =
+        payload.data.status === "pending_review" ||
+        (typeof payload.message === "string" && payload.message.length > 0);
+
+      if (pending && typeof window !== "undefined") {
+        const notice =
+          payload.message ||
+          "Your thread contains image content and has been submitted for admin review before appearing on the public feed.";
+        window.sessionStorage.setItem("chatshare_publish_notice", notice);
+      }
+
       setOpen(false);
       resetState();
       router.push(`/feed/${threadId}`);

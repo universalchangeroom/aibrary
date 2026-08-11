@@ -18,9 +18,12 @@ export default async function FeedPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // Discover feed: only fully published public threads (pending_review is hidden).
   const { data, error } = await supabase
     .from("threads")
     .select("*, footnotes(id)")
+    .eq("is_public", true)
+    .eq("status", "published")
     .order("created_at", { ascending: false });
 
   if (error) {

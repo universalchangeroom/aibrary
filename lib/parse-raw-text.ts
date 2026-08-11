@@ -57,9 +57,23 @@ function isReasoningLabel(label: string): boolean {
   );
 }
 
+/** Markdown image line or line containing `![alt](url)` — never strip these. */
+function containsMarkdownImage(line: string): boolean {
+  return /!\[[^\]]*\]\([^)\s]+[^)]*\)/.test(String(line || ""));
+}
+
+/** True when a turn has plain text and/or image Markdown (not empty whitespace). */
+function hasTurnContent(text: string): boolean {
+  const t = String(text || "").trim();
+  if (!t) return false;
+  return containsMarkdownImage(t) || t.length > 0;
+}
+
 function isDateTimeHeaderLine(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed || trimmed.length > 80) return false;
+  // Preserve markdown images (ChatGPT estuary / DALL·E tags from the bookmarklet).
+  if (containsMarkdownImage(trimmed) || trimmed.startsWith("![")) return false;
   // Never treat a speaker line as a date header.
   if (SPEAKER_LABEL_ONLY.test(trimmed)) return false;
   return DATETIME_LINE_RES.some((re) => re.test(trimmed));
@@ -68,6 +82,7 @@ function isDateTimeHeaderLine(line: string): boolean {
 /**
  * Remove standalone date/time header lines (start of paste or between turns)
  * so they never form false messages or glue onto speaker detection.
+ * Leaves Markdown image tags intact for Conversation Preview rendering.
  */
 export function stripDateTimeHeaders(text: string): string {
   return text
@@ -130,7 +145,11 @@ function buildAssistantMessage(
   reasoning?: string
 ): ParsedRawMessage | null {
   const extracted = extractInlineReasoning(content);
-  const main = extracted.content;
+  // Prefer trimmed main body; fall back to raw content when it is image-only Markdown.
+  let main = String(extracted.content || "").trim();
+  if (!main && containsMarkdownImage(content)) {
+    main = String(content || "").trim();
+  }
   const reasonParts = [reasoning, extracted.reasoning].filter(
     (part): part is string => typeof part === "string" && !!part.trim()
   );
@@ -138,9 +157,10 @@ function buildAssistantMessage(
     ? reasonParts.join("\n\n").trim()
     : undefined;
 
-  if (!main && !mergedReasoning) return null;
+  // Keep image-only assistant turns (no plain text beyond ![alt](url)).
+  if (!hasTurnContent(main) && !mergedReasoning) return null;
 
-  if (!main && mergedReasoning) {
+  if (!hasTurnContent(main) && mergedReasoning) {
     return {
       role: "assistant",
       content: mergedReasoning,
@@ -277,9 +297,10 @@ export function parseRawText(text: string): ParseRawTextResult {
     const bodyMatch = trimmed.match(SPEAKER_LINE);
     let body = bodyMatch ? bodyMatch[1].trim() : "";
     // Strip accidental date lines that landed in the body (e.g. after label).
+    // Never drop Markdown image lines (`![alt](url)`).
     body = body
       .split(/\r?\n/)
-      .filter((line) => !isDateTimeHeaderLine(line))
+      .filter((line) => containsMarkdownImage(line) || !isDateTimeHeaderLine(line))
       .join("\n")
       .trim();
 
@@ -296,7 +317,8 @@ export function parseRawText(text: string): ParseRawTextResult {
 
     if (isUserLabel(label)) {
       flushReasoningOntoLastAssistant();
-      if (!body) continue;
+      // Keep user turns that are solely image Markdown too.
+      if (!hasTurnContent(body)) continue;
       messages.push({ role: "user", content: body });
       continue;
     }
@@ -306,6 +328,8 @@ export function parseRawText(text: string): ParseRawTextResult {
         ? pendingReasoning.join("\n\n").trim()
         : undefined;
     pendingReasoning = [];
+    // Image-only assistant bodies (`![alt](url)` with no other text) must be kept.
+    if (!hasTurnContent(body) && !reasoning) continue;
     appendAssistantMessage(body, reasoning);
   }
 
