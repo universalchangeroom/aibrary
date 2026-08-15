@@ -1,11 +1,14 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Sparkles } from "lucide-react";
 
 import { MarkdownRenderer } from "@/components/markdown-renderer";
-import { RichTextEditor } from "@/components/rich-text-editor";
+import {
+  RichTextEditor,
+  type RichTextEditorHandle,
+} from "@/components/rich-text-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +37,7 @@ const SOURCE_MODELS = [
 
 export function ShareForm() {
   const router = useRouter();
+  const editorRef = useRef<RichTextEditorHandle>(null);
   const [title, setTitle] = useState("");
   const [sourceModel, setSourceModel] = useState<string>("");
   const [tagsInput, setTagsInput] = useState("");
@@ -99,7 +103,22 @@ export function ShareForm() {
       return;
     }
 
-    const content = parsedConversation.messages
+    // Flush TipTap on Publish — React state can lag one paste/update behind.
+    const markdown =
+      editorRef.current?.getMarkdown()?.trim() || transcriptText.trim();
+    if (markdown && markdown !== transcriptText) {
+      setTranscriptText(markdown);
+    }
+
+    const parsed = (() => {
+      try {
+        return parseRawText(markdown);
+      } catch {
+        return parsedConversation;
+      }
+    })();
+
+    const content = parsed.messages
       .filter(
         (m) =>
           (m.role === "user" || m.role === "assistant") &&
@@ -263,6 +282,7 @@ export function ShareForm() {
       <div className="space-y-2">
         <Label htmlFor="transcript">Raw Transcript</Label>
         <RichTextEditor
+          ref={editorRef}
           content={transcriptText}
           onChange={(markdown) => {
             setTranscriptText(markdown);

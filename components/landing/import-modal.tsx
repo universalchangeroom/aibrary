@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import { Loader2, Sparkles, Upload } from "lucide-react";
 
 import { MarkdownRenderer } from "@/components/markdown-renderer";
-import { RichTextEditor } from "@/components/rich-text-editor";
+import {
+  RichTextEditor,
+  type RichTextEditorHandle,
+} from "@/components/rich-text-editor";
 import { AuthModal } from "@/components/auth/auth-modal";
 import { BookmarkletCard } from "@/components/import/bookmarklet-card";
 import { Badge } from "@/components/ui/badge";
@@ -198,6 +201,7 @@ export function ImportModal({
   /** Prevents double POST if auth success and session effect both fire. */
   const publishInFlightRef = useRef(false);
   const pendingImportHandledRef = useRef(false);
+  const editorRef = useRef<RichTextEditorHandle>(null);
   const [showPasteHint, setShowPasteHint] = useState(false);
   const [pasteSourceLabel, setPasteSourceLabel] = useState("Gemini");
   const [tagsInput, setTagsInput] = useState("");
@@ -478,8 +482,38 @@ export function ImportModal({
   }
 
   async function handlePublish() {
-    // Prefer explicit result (link import / bookmarklet); else live text parse.
-    const preview = result ?? (mode === "text" ? livePreview : null);
+    // Flush TipTap so we don't publish a stale empty React snapshot.
+    const markdown =
+      editorRef.current?.getMarkdown()?.trim() || rawText.trim();
+    if (markdown && markdown !== rawText) {
+      setRawText(markdown);
+    }
+
+    let preview = result;
+    if (!preview && mode === "text") {
+      const parsed = parseRawText(markdown);
+      const messages = (parsed.messages ?? []).filter(
+        (m) =>
+          (m.role === "user" || m.role === "assistant") &&
+          typeof m.content === "string" &&
+          m.content.trim().length > 0
+      );
+      if (messages.length > 0) {
+        preview = {
+          source: parsed.source || "Pasted Text",
+          title: parsed.title || "Imported Thread",
+          originalUrl: "",
+          messages: messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+          verified: false,
+        };
+        setResult(preview);
+      }
+    }
+
+    preview = preview ?? (mode === "text" ? livePreview : null);
     if (!preview || preview.messages.length === 0) return;
 
     const accessToken = session?.access_token;
@@ -732,6 +766,7 @@ export function ImportModal({
                   <div className="space-y-2">
                     <Label htmlFor="home-import-text">Raw Transcript</Label>
                     <RichTextEditor
+                      ref={editorRef}
                       content={rawText}
                       onChange={(markdown) => {
                         setRawText(markdown);

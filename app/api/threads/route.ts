@@ -1,6 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
+import { asChatMessages } from "@/lib/types";
+import { parseRawText } from "@/lib/parse-raw-text";
 import {
   IMAGE_REVIEW_MESSAGE,
   resolveThreadStatusForContent,
@@ -17,6 +19,8 @@ interface MessageBody {
 interface PublishThreadBody {
   title?: unknown;
   content?: unknown;
+  messages?: unknown;
+  transcript?: unknown;
   source_model?: unknown;
   source?: unknown;
   tags?: unknown;
@@ -77,6 +81,8 @@ function sourceModelFromPayload(body: PublishThreadBody): string | null {
  * POST /api/threads
  * Authorization: Bearer <supabase_access_token>
  * Body: { title, content, source_model?, tags?, is_public? }
+ *   `content` is the jsonb transcript: [{ role, content }].
+ *   Aliases: `messages` (same array), `transcript` (raw Markdown string).
  *
  * Verifies the JWT via Supabase Auth, then inserts a public.threads row
  * owned by that user (author_id = auth user id).
@@ -121,7 +127,17 @@ export async function POST(request: Request) {
     typeof body.title === "string" && body.title.trim()
       ? body.title.trim()
       : "";
-  const content = body.content;
+  // Canonical column is `content` (jsonb [{role, content}]). Also accept
+  // `messages` / a Markdown `transcript` string so editor payloads are not dropped.
+  let content: unknown = body.content ?? body.messages;
+  if (!isMessageArray(content)) {
+    const coerced = asChatMessages(content);
+    if (coerced.length > 0) content = coerced;
+  }
+  if (!isMessageArray(content) && typeof body.transcript === "string") {
+    const parsed = parseRawText(body.transcript);
+    if (parsed.messages.length > 0) content = parsed.messages;
+  }
   const tags = Array.isArray(body.tags)
     ? body.tags.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
     : [];
@@ -135,7 +151,8 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!isMessageArray(content)) {
+  const messagesToInsert = asChatMessages(content);
+  if (messagesToInsert.length === 0) {
     return NextResponse.json(
       {
         success: false,
@@ -190,7 +207,7 @@ export async function POST(request: Request) {
   }
 
   // Image Markdown in any turn → hold for admin review off the public feed.
-  const status = resolveThreadStatusForContent(content);
+  const status = resolveThreadStatusForContent(messagesToInsert);
   const pendingReview = status === "pending_review";
 
   const { data: thread, error: insertError } = await supabase
@@ -198,7 +215,7 @@ export async function POST(request: Request) {
     .insert({
       author_id: user.id,
       title,
-      content,
+      content: messagesToInsert,
       source_model: sourceModel,
       tags,
       is_public: isPublic,

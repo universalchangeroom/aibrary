@@ -10,26 +10,29 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { VoteButtons } from "@/components/ui/vote-buttons";
+import { FormattedTime } from "@/components/formatted-time";
 import type { ChatMessage, ThreadWithFootnotes } from "@/lib/types";
 
 interface ThreadCardProps {
   thread: ThreadWithFootnotes;
 }
 
-function conversationPreview(messages: ChatMessage[]): string {
-  const firstUser = messages.find((m) => m.role === "user");
-  const firstAssistant = messages.find((m) => m.role === "assistant");
+function conversationPreview(messages: ChatMessage[] | null | undefined): string {
+  const list = messages ?? [];
+  const firstUser = list.find((m) => m.role === "user");
+  const firstAssistant = list.find((m) => m.role === "assistant");
 
   if (firstUser && firstAssistant) {
     return `${firstUser.content} — ${firstAssistant.content}`;
   }
 
-  return messages.map((m) => m.content).join(" — ");
+  return list.map((m) => m.content).join(" — ");
 }
 
 export function ThreadCard({ thread }: ThreadCardProps) {
   const preview = conversationPreview(thread.content);
-  const hasFootnotes = thread.footnotes.length > 0;
+  const tags = thread.tags ?? [];
+  const hasFootnotes = (thread.footnotes ?? []).length > 0;
 
   return (
     <div className="flex gap-2 rounded-xl focus-within:ring-2 focus-within:ring-ring">
@@ -71,12 +74,18 @@ export function ThreadCard({ thread }: ThreadCardProps) {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {thread.tags.map((tag) => (
+              {tags.map((tag) => (
                 <Badge key={tag} variant="outline">
                   {tag}
                 </Badge>
               ))}
             </div>
+            {thread.created_at ? (
+              <FormattedTime
+                date={thread.created_at}
+                className="text-xs text-muted-foreground"
+              />
+            ) : null}
           </CardHeader>
 
           <CardContent>

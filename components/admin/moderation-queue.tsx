@@ -4,6 +4,7 @@ import { CheckCircle2, Loader2, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { FormattedTime } from "@/components/formatted-time";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -148,10 +149,7 @@ export function ModerationQueue({ threads: initial }: ModerationQueueProps) {
                     </span>
                     <span className="text-muted-foreground">
                       Submitted{" "}
-                      {new Date(thread.created_at).toLocaleString(undefined, {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      })}
+                      <FormattedTime date={thread.created_at} />
                     </span>
                   </CardDescription>
                 </div>

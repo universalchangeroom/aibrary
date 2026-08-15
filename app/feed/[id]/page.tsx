@@ -8,9 +8,12 @@ import { createClient } from "@/lib/supabase/server";
 import {
   asChatMessages,
   asFootnotes,
+  threadContentFromRow,
   type ThreadWithFootnotes,
 } from "@/lib/types";
 import { emptyVoteSummary, summarizeVotes, type VoteRow } from "@/lib/votes";
+
+export const dynamic = "force-dynamic";
 
 interface ThreadPageProps {
   params: Promise<{ id: string }> | { id: string };
@@ -26,7 +29,9 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
 
   const { data, error } = await supabase
     .from("threads")
-    .select("*, footnotes(*)")
+    .select(
+      "id, author_id, title, content, source_model, tags, is_public, status, created_at, updated_at, footnotes(*)"
+    )
     .eq("id", id)
     .order("created_at", { ascending: true, foreignTable: "footnotes" })
     .maybeSingle();
@@ -96,7 +101,9 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
 
   const thread: ThreadWithFootnotes = {
     ...data,
-    content: asChatMessages(data.content),
+    content: asChatMessages(
+      threadContentFromRow(data as Record<string, unknown>)
+    ),
     tags: Array.isArray(data.tags) ? data.tags : [],
     footnotes: footnotes.map((footnote) => {
       const summary =
@@ -121,6 +128,7 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
       </Button>
 
       <ThreadDetailView
+        key={thread.id}
         thread={thread}
         isAuthenticated={Boolean(user)}
       />

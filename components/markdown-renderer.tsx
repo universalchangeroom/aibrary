@@ -7,7 +7,7 @@ import {
   type ReactNode,
   type SyntheticEvent,
 } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import remarkGfm from "remark-gfm";
@@ -246,6 +246,10 @@ export function MarkdownRenderer({
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        urlTransform={(url) => {
+          if (url.startsWith("data:image/")) return url;
+          return defaultUrlTransform(url);
+        }}
         components={{
           code: MarkdownCode,
           // Avoid nested <pre> wrappers around our SyntaxHighlighter frame.

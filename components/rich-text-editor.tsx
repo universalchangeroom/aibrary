@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -13,8 +14,14 @@ import {
   ListOrdered,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+} from "react";
 import { Markdown } from "tiptap-markdown";
+import type { Editor } from "@tiptap/react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -67,15 +74,80 @@ function ToolbarButton({
   );
 }
 
-function getMarkdown(editor: { storage: unknown }): string {
+export type RichTextEditorHandle = {
+  /** Latest Markdown (falls back to HTML images / plain text so Publish never sees an empty editor). */
+  getMarkdown: () => string;
+};
+
+function markdownImagesFromHtml(html: string): string[] {
+  const out: string[] = [];
+  const tags = String(html || "").match(/<img\b[^>]*>/gi) ?? [];
+  for (const tag of tags) {
+    const src = tag.match(/\bsrc\s*=\s*["']([^"']+)["']/i)?.[1]?.trim();
+    if (!src) continue;
+    const alt =
+      tag.match(/\balt\s*=\s*["']([^"']*)["']/i)?.[1]?.trim() ||
+      "Generated image";
+    out.push(`![${alt}](${src})`);
+  }
+  return out;
+}
+
+function mergeMarkdownImages(markdown: string, html: string): string {
+  let next = String(markdown || "");
+  for (const imgMd of markdownImagesFromHtml(html)) {
+    const src = imgMd.match(/\]\(([^)]+)\)/)?.[1] ?? "";
+    if ((src && next.includes(src)) || next.includes(imgMd)) continue;
+    next = next.trim() ? `${next.trimEnd()}\n\n${imgMd}` : imgMd;
+  }
+  return next;
+}
+
+function getMarkdown(
+  editor:
+    | Editor
+    | {
+        storage: unknown;
+        getText?: (opts?: { blockSeparator?: string }) => string;
+        getHTML?: () => string;
+      }
+    | null
+): string {
+  if (!editor) return "";
+  let html = "";
+  try {
+    if (typeof editor.getHTML === "function") {
+      html = editor.getHTML() ?? "";
+    }
+  } catch {
+    html = "";
+  }
+
   try {
     const storage = editor.storage as {
       markdown?: { getMarkdown?: () => string };
     };
-    return storage.markdown?.getMarkdown?.() ?? "";
+    const fromExt = storage.markdown?.getMarkdown?.() ?? "";
+    const withImages = mergeMarkdownImages(
+      typeof fromExt === "string" ? fromExt : "",
+      html
+    );
+    if (withImages.trim()) return withImages;
+  } catch {
+    // TipTap 3 + tiptap-markdown can fail to serialize; fall through.
+  }
+
+  const fromHtmlOnly = mergeMarkdownImages("", html);
+  if (fromHtmlOnly.trim()) return fromHtmlOnly;
+
+  try {
+    if (typeof editor.getText === "function") {
+      return editor.getText({ blockSeparator: "\n\n" }) ?? "";
+    }
   } catch {
     return "";
   }
+  return "";
 }
 
 /**
@@ -83,15 +155,19 @@ function getMarkdown(editor: { storage: unknown }): string {
  * HTML/rich-text paste (ChatGPT, Claude, Gemini, etc.) is converted into
  * TipTap nodes (ProseMirror); parents receive structured Markdown via onChange.
  */
-export function RichTextEditor({
-  content = "",
-  onChange,
-  placeholder = "Write something…",
-  className,
-  editorClassName,
-  editable = true,
-  dense = false,
-}: RichTextEditorProps) {
+export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorProps>(
+  function RichTextEditor(
+    {
+      content = "",
+      onChange,
+      placeholder = "Write something…",
+      className,
+      editorClassName,
+      editable = true,
+      dense = false,
+    },
+    ref
+  ) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -106,6 +182,10 @@ export function RichTextEditor({
         placeholder,
         emptyEditorClass:
           "before:pointer-events-none before:float-left before:h-0 before:text-muted-foreground before:content-[attr(data-placeholder)]",
+      }),
+      Image.configure({
+        inline: true,
+        allowBase64: true,
       }),
       Markdown.configure({
         // HTML paste → document; serialization via getMarkdown() on every update.
@@ -137,6 +217,7 @@ export function RichTextEditor({
           "[&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-muted/60 [&_pre]:p-3",
           "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
           "[&_strong]:font-semibold",
+          "[&_img]:my-2 [&_img]:max-h-64 [&_img]:max-w-full [&_img]:rounded-md [&_img]:object-contain",
           editorClassName
         ),
       },
@@ -157,12 +238,21 @@ export function RichTextEditor({
     },
   });
 
-  // Sync external Markdown → editor without fighting local typing.
+  useImperativeHandle(
+    ref,
+    () => ({
+      getMarkdown: () => getMarkdown(editor),
+    }),
+    [editor]
+  );
+
+  // Don't clobber a non-empty document with an empty parent (failed serialize / stale state).
   useEffect(() => {
     if (!editor) return;
     const current = getMarkdown(editor).trimEnd();
     const next = (content ?? "").trimEnd();
     if (current === next) return;
+    if (!next && current) return;
     editor.commands.setContent(content || "", { emitUpdate: false });
   }, [content, editor]);
 
@@ -261,4 +351,4 @@ export function RichTextEditor({
       <EditorContent editor={editor} />
     </div>
   );
-}
+});

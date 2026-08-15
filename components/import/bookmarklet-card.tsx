@@ -17,15 +17,13 @@ interface BookmarkletCardProps {
  * Payload copies labeled chat text to the clipboard (CSP-safe), then opens /share.
  */
 export function BookmarkletCard({ className }: BookmarkletCardProps) {
-  const [appOrigin, setAppOrigin] = useState("");
+  const [appOrigin, setAppOrigin] = useState(() => resolveChatShareOrigin());
 
   useEffect(() => {
     setAppOrigin(resolveChatShareOrigin(window.location.origin));
   }, []);
 
-  const bookmarkletScript = appOrigin
-    ? buildImportBookmarklet(appOrigin)
-    : buildImportBookmarklet(resolveChatShareOrigin());
+  const bookmarkletScript = buildImportBookmarklet(appOrigin);
 
   return (
     <div
@@ -58,9 +56,9 @@ export function BookmarkletCard({ className }: BookmarkletCardProps) {
       <p className="text-xs text-muted-foreground">
         Opens{" "}
         <span className="font-mono">
-          {appOrigin || "http://localhost:3001"}
-        </span>
-        /share after copying. Re-drag the button if you change ports.
+          {appOrigin}/share?paste=1
+        </span>{" "}
+        after copying. Re-drag the button if you change hosts or ports.
       </p>
     </div>
   );

@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { AddFootnoteDialog } from "@/components/feed/add-footnote-dialog";
 import { ConversationView } from "@/components/feed/conversation-view";
 import { FootnoteSheet } from "@/components/feed/footnote-sheet";
+import { FormattedTime } from "@/components/formatted-time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -171,6 +172,10 @@ export function ThreadDetailView({
   const isOwner = Boolean(user?.id && ownerId && user.id === ownerId);
   const footnoteCount = thread.footnotes.length;
   const busy = isSaving || isSwitchingLayout || isDeleting;
+
+  useEffect(() => {
+    setThread(initialThread);
+  }, [initialThread.id, initialThread.updated_at]);
 
   useEffect(() => {
     if (!showSuccessToast) return;
@@ -552,6 +557,12 @@ export function ThreadDetailView({
             </div>
             {thread.source_model ? (
               <Badge variant="secondary">{thread.source_model}</Badge>
+            ) : null}
+            {thread.created_at ? (
+              <FormattedTime
+                date={thread.created_at}
+                className="block text-sm text-muted-foreground"
+              />
             ) : null}
           </div>
 

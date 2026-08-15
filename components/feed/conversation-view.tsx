@@ -34,7 +34,7 @@ function RoleBadge({ isUser }: { isUser: boolean }) {
 }
 
 export function ConversationView({
-  messages,
+  messages = [],
   footnotes: _footnotes = [],
   threadId: _threadId,
   isEditing = false,
@@ -48,6 +48,12 @@ export function ConversationView({
 
   return (
     <section className="flex flex-col gap-5" aria-label="Conversation">
+      {list.length === 0 ? (
+        <p className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+          No transcript was saved for this thread.
+        </p>
+      ) : null}
+
       {list.map((message, index) => {
         const isUser = message.role === "user";
 

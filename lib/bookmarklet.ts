@@ -5,24 +5,39 @@ export const CHATSHARE_PENDING_IMPORT_KEY = "chatshare_pending_import";
 export const CHATSHARE_PENDING_HASH_KEY = "chatshare_pending";
 
 /**
- * Build a drag-to-bookmarks JavaScript bookmarklet for the given app origin.
- * Uses the live site origin so the same button works in production and localhost.
- * Defaults to http://localhost:3001 when origin is missing.
- *
- * Avoids cross-origin fetch (CSP-safe on gemini.google.com): extracts DOM as
- * Markdown (bold/italic/code/lists/images), copies to clipboard, then opens
- * ChatShare /share for paste.
+ * Resolve the ChatShare origin baked into the bookmarklet.
+ * Client: window.location.origin. Server: NEXT_PUBLIC_APP_URL, else localhost:3000.
  */
 export function resolveChatShareOrigin(appOrigin?: string): string {
-  const raw = (appOrigin || "").trim().replace(/\/$/, "");
-  if (raw && /^https?:\/\//i.test(raw)) return raw;
-  return "http://localhost:3001";
+  const explicit = (appOrigin || "").trim().replace(/\/$/, "");
+  if (explicit && /^https?:\/\//i.test(explicit)) return explicit;
+
+  if (typeof window !== "undefined") {
+    try {
+      const live = String(window.location?.origin || "")
+        .trim()
+        .replace(/\/$/, "");
+      if (live && /^https?:\/\//i.test(live)) return live;
+    } catch {
+      // ignore
+    }
+  }
+
+  const fromEnv = String(
+    process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || ""
+  )
+    .trim()
+    .replace(/\/$/, "");
+  if (fromEnv && /^https?:\/\//i.test(fromEnv)) return fromEnv;
+
+  return "http://localhost:3000";
 }
 
-export function buildImportBookmarklet(appOrigin: string): string {
+export function buildImportBookmarklet(appOrigin?: string): string {
   const origin = resolveChatShareOrigin(appOrigin);
   // Compact, ES5-friendly payload (bookmarklet URL length limits).
   // HTML → Markdown so paste/parse keeps structure for ChatShare editors.
+  // `O` is the live ChatShare origin; dest = O + "/share?paste=1&source=…"
   const code = `(function(){
 var O=${JSON.stringify(origin)};
 function host(){return(location.hostname||"").toLowerCase();}
@@ -49,13 +64,13 @@ var u=first.replace(/\\s+\\d+[wx]$/i,"").replace(/^\\s+|\\s+$/g,"");
 if(u)src=u;
 }
 }
-/* ChatGPT sometimes wraps the full-res file URL on a parent <a download>. */
+/* ChatGPT often wraps the full-res file on a parent <a download> — take any http(s) file href. */
 if((!src||src.indexOf("blob:")===0)&&img.closest){
 try{
 var a=img.closest("a[href]");
 if(a){
 var href=a.getAttribute("href")||a.href||"";
-if(href&&/estuary|oaidalle|oaiusercontent|dalle|backend-api|\\.(png|jpe?g|webp|gif)(\\?|$)/i.test(href))src=href;
+if(href&&(href.indexOf("http")===0||href.indexOf("//")===0||href.charAt(0)==="/"||/\\.(png|jpe?g|webp|gif|avif)(\\?|$)/i.test(href)))src=href;
 }
 }catch(eA){}
 }
@@ -123,16 +138,16 @@ depth++;
 return true;
 }
 function imgToMd(img){
-if(!isContentImage(img))return"";
+if(!isContentImage(img)&&!isGeneratedImage(img))return"";
 var src=resolveImgSrc(img);
 if(!src)return"";
 if(src.indexOf("//")===0)src="https:"+src;
 var alt=imgAltText(img);
 if(isGeneratedImage(img)){
-if(!alt)alt="Generated Image";
-}else{
-if(!alt||/^(image|img|photo|picture|media)$/i.test(alt))alt="Image Description";
+if(!alt)alt="Generated image";
+return "\\n\\n!["+alt+"]("+src+")\\n\\n";
 }
+if(!alt||/^(image|img|photo|picture|media)$/i.test(alt))alt="Image Description";
 return "\\n\\n!["+alt+"]("+src+")\\n\\n";
 }
 function harvestImages(root,preferGenerated){
@@ -153,7 +168,7 @@ src=resolveImgSrc(img);
 if(!src||seen[src])continue;
 if(preferGenerated){
 if(!isGeneratedImage(img)&&!isContentImage(img))continue;
-}else if(!isContentImage(img)){
+}else if(!isContentImage(img)&&!isGeneratedImage(img)){
 continue;
 }
 seen[src]=1;
@@ -409,46 +424,186 @@ parts.push((turns[i].role==="user"?"User:\\n":"Gemini:\\n")+turns[i].txt);
 }
 return parts.length?parts.join("\\n\\n"):null;
 }
+function stripChatGptSaidLabels(raw){
+if(!raw)return"";
+var s=String(raw).replace(/\\u00a0/g," ");
+s=s.replace(/^\\s*(?:\\*\\*|__|#\\s*)?(?:You said|ChatGPT said|Assistant said)(?:\\*\\*|__)?\\s*:?\\s*/gim,"");
+s=s.replace(/\\n\\s*(?:\\*\\*|__|#\\s*)?(?:You said|ChatGPT said|Assistant said)(?:\\*\\*|__)?\\s*:?\\s*/gim,"\\n");
+return s.replace(/^\\s+|\\s+$/g,"");
+}
+function chatGptImgSrc(img){
+if(!img)return"";
+var src="";
+try{src=String(img.src||"");}catch(e0){src="";}
+try{
+if(!src||src.indexOf("blob:")===0||src.indexOf("data:")===0){
+src=String((img.getAttribute&&(img.getAttribute("src")||img.getAttribute("data-src")||img.getAttribute("data-lazy-src")))||src||"");
+}
+}catch(e1){}
+try{if(img.currentSrc&&String(img.currentSrc).indexOf("http")===0)src=img.currentSrc;}catch(e2){}
+if((!src||src.indexOf("blob:")===0||src.indexOf("data:")===0)&&img.closest){
+try{
+var a=img.closest("a[href]");
+if(a){
+var href=a.getAttribute("href")||a.href||"";
+if(href&&href.indexOf("javascript:")!==0)src=href;
+}
+}catch(e3){}
+}
+if(src&&src.indexOf("//")===0)src="https:"+src;
+try{
+if(src&&src.charAt(0)==="/"&&src.charAt(1)!=="/"&&typeof location!=="undefined"&&location.origin){
+src=String(location.origin)+src;
+}
+}catch(e4){}
+return String(src||"").replace(/^\\s+|\\s+$/g,"");
+}
+function chatGptImagesInTurn(turn){
+if(!turn||!turn.querySelectorAll)return[];
+var wrap=turn,list=[],imgs,i,img,src,alt,owner,pushImgs,out,seenSrc,j,block;
+try{
+var outer=turn.closest&&(turn.closest("article")||turn.closest('[data-testid*="conversation-turn"]'));
+if(outer)wrap=outer;
+}catch(eW){}
+pushImgs=function(root){
+if(!root||!root.querySelectorAll)return;
+try{imgs=root.querySelectorAll("img");}catch(eI){return;}
+for(i=0;i<imgs.length;i++){
+img=imgs[i];
+if(!img||list.indexOf(img)>=0)continue;
+try{
+owner=img.closest&&img.closest("[data-message-author-role]");
+if(owner&&owner!==turn)continue;
+}catch(eO){}
+list.push(img);
+}
+};
+pushImgs(turn);
+if(wrap!==turn)pushImgs(wrap);
+out=[];seenSrc={};
+for(j=0;j<list.length;j++){
+img=list[j];
+src=chatGptImgSrc(img);
+if(!src||seenSrc[src])continue;
+if(src.indexOf("data:image/svg")===0)continue;
+seenSrc[src]=1;
+alt="";
+try{alt=String(img.alt||"").replace(/[\\[\\]\\r\\n]/g," ").replace(/^\\s+|\\s+$/g,"");}catch(eA){alt="";}
+if(!alt)alt="Generated image";
+/* Text prefix is required so parseRawText keeps image-only turns. */
+block="[AI Generated Image]\\n\\n!["+alt+"]("+src+")";
+out.push(block);
+}
+return out;
+}
+function imgToDataUrl(img){
+return new Promise(function(resolve){
+var src="";
+try{src=String((img&&(img.currentSrc||img.src))||"");}catch(e0){src="";}
+if(src.indexOf("data:image/svg")===0){resolve("");return;}
+if(src.indexOf("data:")===0){resolve(src);return;}
+function fromBlob(blob){
+if(!blob){resolve("");return;}
+var reader=new FileReader();
+reader.onloadend=function(){resolve(reader.result||"");};
+reader.onerror=function(){resolve("");};
+reader.readAsDataURL(blob);
+}
+function fromCanvas(){
+try{
+var w=img.naturalWidth||img.width||0;
+var h=img.naturalHeight||img.height||0;
+if(!w||!h){resolve("");return;}
+var c=document.createElement("canvas");
+c.width=w;c.height=h;
+var ctx=c.getContext("2d");
+ctx.drawImage(img,0,0);
+resolve(c.toDataURL("image/png"));
+}catch(eC){resolve("");}
+}
+if(!src){fromCanvas();return;}
+fetch(src).then(function(res){
+if(!res||!res.ok)throw new Error("fetch");
+return res.blob();
+}).then(fromBlob).catch(function(){fromCanvas();});
+});
+}
+function appendGlobalGeneratedImages(payload){
+var gImgs,jobs=[],g;
+try{gImgs=document.querySelectorAll('img[alt*="Generated image"],img[alt*="Generated Image"]');}catch(eG){gImgs=null;}
+if(!gImgs||!gImgs.length){
+return Promise.resolve(String(payload||"").replace(/^\\s+|\\s+$/g,"")||null);
+}
+for(g=0;g<gImgs.length;g++){
+(function(gImg){
+var gAlt="";
+try{gAlt=String((gImg&&gImg.alt)||"").replace(/[\\[\\]\\r\\n]/g," ").replace(/^\\s+|\\s+$/g,"");}catch(eA){gAlt="";}
+if(!gAlt)gAlt="Generated image";
+jobs.push(imgToDataUrl(gImg).then(function(base64Url){
+if(!base64Url||String(base64Url).indexOf("data:")!==0)return null;
+return{alt:gAlt,url:String(base64Url)};
+}));
+})(gImgs[g]);
+}
+return Promise.all(jobs).then(function(rows){
+var out=String(payload||"");
+var added=0,i,row;
+for(i=0;i<rows.length;i++){
+row=rows[i];
+if(!row||!row.url)continue;
+if(!added){
+if(!out)out="ChatGPT:\\n";
+out=out+"\\n\\n--- Extracted Images ---\\n\\n";
+added=1;
+}
+out=out+"[AI Generated Image]\\n!["+row.alt+"]("+row.url+")\\n\\n";
+}
+out=String(out||"").replace(/^\\s+|\\s+$/g,"");
+return out||null;
+});
+}
 function chatGptText(){
 var h=host();
 if(h.indexOf("chatgpt.com")<0&&h.indexOf("chat.openai.com")<0)return null;
-var nodes=document.querySelectorAll('[data-message-author-role]');
-if(!nodes.length)nodes=document.querySelectorAll('[data-testid*="conversation-turn"]');
-if(!nodes.length)return null;
-var parts=[],i,n,role,txt,md,imgs,asstRoot,turnRoot;
+var nodes=document.querySelectorAll("[data-message-author-role]");
+if(!nodes||!nodes.length)nodes=document.querySelectorAll("article");
+if(!nodes||!nodes.length)return appendGlobalGeneratedImages("");
+var parts=[],i,turn,role,txt,textRoot,imgs,j,block;
 for(i=0;i<nodes.length;i++){
-n=nodes[i];
-role=(n.getAttribute("data-message-author-role")||"").toLowerCase();
+turn=nodes[i];
+role=String((turn.getAttribute&&turn.getAttribute("data-message-author-role"))||"").toLowerCase();
 if(!role){
-if(n.querySelector&&n.querySelector('[data-message-author-role="user"]'))role="user";
-else if(n.querySelector&&n.querySelector('[data-message-author-role="assistant"]'))role="assistant";
+if(turn.querySelector){
+if(turn.querySelector('[data-message-author-role="user"]')){
+turn=turn.querySelector('[data-message-author-role="user"]')||turn;
+role="user";
+}else if(turn.querySelector('[data-message-author-role="assistant"]')){
+turn=turn.querySelector('[data-message-author-role="assistant"]')||turn;
+role="assistant";
 }
-md=n.querySelector? (n.querySelector(".markdown")||n.querySelector('[class*="markdown"]')||n.querySelector(".prose")||n):n;
-txt=cleanChrome(htmlToMd(md||n));
-if(role==="assistant"||role==="system"){
-/* Full turn root — gen images often live outside .markdown (galleries). */
-turnRoot=n;
-asstRoot=n;
-if(n.closest){
-try{
-turnRoot=n.closest('[data-testid*="conversation-turn"]')||n.closest("article")||n.parentElement||n;
-}catch(eT){turnRoot=n;}
 }
-imgs=mergeImageLists(harvestImages(n,true),harvestImages(turnRoot,true));
-if(md&&md!==n)imgs=mergeImageLists(imgs,harvestImages(md,true));
-/* Image-only turns: empty text + at least one img → emit Markdown so the turn is kept. */
-if(!String(txt||"").replace(/^\\s+|\\s+$/g,"")&&imgs.length===0){
-imgs=mergeImageLists(imgs,harvestImages(turnRoot,false));
 }
-txt=appendMissingImages(txt,imgs);
-if(!String(txt||"").replace(/^\\s+|\\s+$/g,""))continue;
-parts.push("ChatGPT:\\n"+txt);
-}else{
+if(role!=="user"&&role!=="assistant"&&role!=="system")continue;
+textRoot=turn.querySelector?(turn.querySelector(".markdown")||turn.querySelector(".prose")||turn.querySelector('[class*="markdown"]')||turn):turn;
+txt=stripChatGptSaidLabels(cleanChrome(htmlToMd(textRoot||turn)));
+txt=String(txt||"").replace(/!\\[[^\\]]*\\]\\([^)]*\\)/g,"").replace(/\\n{3,}/g,"\\n\\n").replace(/^\\s+|\\s+$/g,"");
+imgs=(role==="assistant"||role==="system")?chatGptImagesInTurn(turn):[];
+if(imgs.length){
+block="";
+for(j=0;j<imgs.length;j++){
+if(!imgs[j]||txt.indexOf(imgs[j])>=0||block.indexOf(imgs[j])>=0)continue;
+block=block?block+"\\n\\n"+imgs[j]:imgs[j];
+}
+/* Image-only turns must keep the [AI Generated Image] text fail-safe. */
+txt=txt&&block?txt+"\\n\\n"+block:(block||txt);
+}
+txt=String(txt||"").replace(/^\\s+|\\s+$/g,"");
 if(!txt)continue;
-parts.push("User:\\n"+txt);
+if(role==="user")parts.push("User:\\n"+txt);
+else parts.push("ChatGPT:\\n"+txt);
 }
-}
-return parts.length?parts.join("\\n\\n"):null;
+var payload=parts.length?parts.join("\\n\\n"):"";
+return appendGlobalGeneratedImages(payload);
 }
 function pageText(){
 var t=null;
@@ -491,13 +646,17 @@ if(ok)resolve();else reject(new Error("copy failed"));
 });
 }
 var t=pageText();
-if(!t||!String(t).replace(/^\\s+|\\s+$/g,"")){alert("No readable text on this page.");return;}
+Promise.resolve(t).then(function(text){
+if(!text||!String(text).replace(/^\\s+|\\s+$/g,"")){alert("No readable text on this page.");return;}
 var dest=O+"/share?paste=1&source="+encodeURIComponent(sourceName());
-copyText(t).then(function(){
+return copyText(text).then(function(){
 window.open(dest,"_blank");
 }).catch(function(){
 window.open(dest,"_blank");
 alert("Opened ChatShare, but auto-copy failed. Select and copy the chat, then paste in the Paste transcript tab.");
+});
+}).catch(function(){
+alert("Could not extract this page.");
 });
 })();`;
 
