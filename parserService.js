@@ -1018,6 +1018,14 @@ function hasTurnContent(text) {
   return containsMarkdownImage(t) || t.length > 0;
 }
 
+/** Collapse runaway blank lines so preview/editor spacing stays readable. */
+function sanitizeMessageContent(text) {
+  return String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function isDateTimeHeaderLine(line) {
   const trimmed = String(line || "").trim();
   if (!trimmed || trimmed.length > 80) return false;
@@ -1134,9 +1142,9 @@ function extractInlineReasoning(body) {
 function buildAssistantMessage(content, reasoning) {
   const extracted = extractInlineReasoning(content);
   // Prefer trimmed main body; fall back to raw content when it is image-only Markdown.
-  let main = String(extracted.content || "").trim();
+  let main = sanitizeMessageContent(extracted.content || "");
   if (!main && containsMarkdownImage(content)) {
-    main = String(content || "").trim();
+    main = sanitizeMessageContent(content);
   }
   const reasonParts = [reasoning, extracted.reasoning].filter(
     (part) => typeof part === "string" && part.trim()
@@ -1153,7 +1161,7 @@ function buildAssistantMessage(content, reasoning) {
   if (!hasTurnContent(main) && mergedReasoning) {
     return {
       role: "assistant",
-      content: mergedReasoning,
+      content: sanitizeMessageContent(mergedReasoning),
       reasoning: mergedReasoning,
     };
   }
@@ -1161,7 +1169,9 @@ function buildAssistantMessage(content, reasoning) {
   if (mergedReasoning) {
     return {
       role: "assistant",
-      content: `Thinking:\n${mergedReasoning}\n\n${main}`,
+      content: sanitizeMessageContent(
+        `Thinking:\n${mergedReasoning}\n\n${main}`
+      ),
       reasoning: mergedReasoning,
     };
   }
@@ -1284,7 +1294,9 @@ function parseRawText(text) {
       if (messages.length > 0) {
         const last = messages[messages.length - 1];
         // Prefer merging unlabeled multi-paragraph blocks into the open turn.
-        last.content = `${last.content}\n\n${trimmed}`.replace(/\n{3,}/g, "\n\n");
+        last.content = sanitizeMessageContent(
+          `${last.content}\n\n${trimmed}`
+        );
       } else if (pendingReasoning.length > 0) {
         pendingReasoning[pendingReasoning.length - 1] += `\n${trimmed}`;
       }
@@ -1295,11 +1307,14 @@ function parseRawText(text) {
     const bodyMatch = trimmed.match(SPEAKER_LINE);
     let body = bodyMatch ? bodyMatch[1].trim() : "";
     // Never drop Markdown image lines (`![alt](url)`).
-    body = body
-      .split(/\r?\n/)
-      .filter((line) => containsMarkdownImage(line) || !isDateTimeHeaderLine(line))
-      .join("\n")
-      .trim();
+    body = sanitizeMessageContent(
+      body
+        .split(/\r?\n/)
+        .filter(
+          (line) => containsMarkdownImage(line) || !isDateTimeHeaderLine(line)
+        )
+        .join("\n")
+    );
 
     const labelNorm = normalizeSpeakerLabel(label);
     if (labelNorm === "chatgpt") sawChatGpt = true;

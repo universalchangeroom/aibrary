@@ -8,8 +8,15 @@ const SPEAKER_LABEL_RE =
 
 const CODE_FENCE_RE = /```[\s\S]*?```/g;
 const INLINE_CODE_RE = /`[^`]+`/g;
+/** Markdown images: ![alt](url) and linked images [![alt](src)](href). */
+const MD_IMAGE_RE = /!?\[(?:[^\]]*)\]\([^)]*\)/g;
+/** Standard markdown links [label](url). */
+const MD_LINK_RE = /\[[^\]]*\]\([^)]*\)/g;
+const DATA_URI_RE = /data:[a-z0-9.+/-]+;base64,[a-z0-9+/=]+/gi;
 const URL_RE = /https?:\/\/\S+/gi;
-const NON_WORD_RE = /[^a-z0-9\s'-]+/g;
+const WWW_URL_RE = /\bwww\.\S+/gi;
+/** Keep letters / apostrophes / hyphens only — drop digits that create hash-like tokens. */
+const NON_WORD_RE = /[^a-z\s'-]+/g;
 
 const STOP_WORDS = new Set([
   "a",
@@ -226,9 +233,10 @@ const STOP_WORDS = new Set([
 ]);
 
 function isContentToken(token: string): boolean {
-  if (token.length < 3) return false;
+  if (token.length < 3 || token.length > 20) return false;
   if (STOP_WORDS.has(token)) return false;
-  if (/^\d+$/.test(token)) return false;
+  // Strictly alphabetical words (optional internal apostrophe/hyphen only).
+  if (!/^[a-z]+(?:['-][a-z]+)*$/i.test(token)) return false;
   return true;
 }
 
@@ -236,7 +244,11 @@ function preprocessTranscript(raw: string): string {
   return raw
     .replace(CODE_FENCE_RE, " ")
     .replace(INLINE_CODE_RE, " ")
+    .replace(MD_IMAGE_RE, " ")
+    .replace(MD_LINK_RE, " ")
+    .replace(DATA_URI_RE, " ")
     .replace(URL_RE, " ")
+    .replace(WWW_URL_RE, " ")
     .replace(SPEAKER_LABEL_RE, "\n")
     .replace(NON_WORD_RE, " ")
     .toLowerCase()

@@ -496,67 +496,73 @@ out.push(block);
 }
 return out;
 }
-function imgToDataUrl(img){
+function imgToThumbJpeg(img){
 return new Promise(function(resolve){
-var src="";
-try{src=String((img&&(img.currentSrc||img.src))||"");}catch(e0){src="";}
-if(src.indexOf("data:image/svg")===0){resolve("");return;}
-if(src.indexOf("data:")===0){resolve(src);return;}
-function fromBlob(blob){
-if(!blob){resolve("");return;}
-var reader=new FileReader();
-reader.onloadend=function(){resolve(reader.result||"");};
-reader.onerror=function(){resolve("");};
-reader.readAsDataURL(blob);
-}
-function fromCanvas(){
+function draw(el){
 try{
-var w=img.naturalWidth||img.width||0;
-var h=img.naturalHeight||img.height||0;
+var w=el.naturalWidth||el.width||0;
+var h=el.naturalHeight||el.height||0;
 if(!w||!h){resolve("");return;}
+var maxW=100;
+var dw=w>maxW?maxW:w;
+var dh=Math.max(1,Math.round(h*(dw/w)));
 var c=document.createElement("canvas");
-c.width=w;c.height=h;
+c.width=dw;c.height=dh;
 var ctx=c.getContext("2d");
-ctx.drawImage(img,0,0);
-resolve(c.toDataURL("image/png"));
+if(!ctx){resolve("");return;}
+ctx.drawImage(el,0,0,dw,dh);
+resolve(c.toDataURL("image/jpeg",0.1));
 }catch(eC){resolve("");}
 }
-if(!src){fromCanvas();return;}
-fetch(src).then(function(res){
-if(!res||!res.ok)throw new Error("fetch");
-return res.blob();
-}).then(fromBlob).catch(function(){fromCanvas();});
+if(!img){resolve("");return;}
+if((img.naturalWidth||img.width)>0){draw(img);return;}
+try{
+if(img.decode){
+img.decode().then(function(){draw(img);}).catch(function(){draw(img);});
+return;
+}
+}catch(eD){}
+draw(img);
 });
 }
 function appendGlobalGeneratedImages(payload){
-var gImgs,jobs=[],g;
+var gImgs,jobs=[],g,seenImages=new Set();
 try{gImgs=document.querySelectorAll('img[alt*="Generated image"],img[alt*="Generated Image"]');}catch(eG){gImgs=null;}
 if(!gImgs||!gImgs.length){
 return Promise.resolve(String(payload||"").replace(/^\\s+|\\s+$/g,"")||null);
 }
 for(g=0;g<gImgs.length;g++){
 (function(gImg){
-var gAlt="";
-try{gAlt=String((gImg&&gImg.alt)||"").replace(/[\\[\\]\\r\\n]/g," ").replace(/^\\s+|\\s+$/g,"");}catch(eA){gAlt="";}
-if(!gAlt)gAlt="Generated image";
-jobs.push(imgToDataUrl(gImg).then(function(base64Url){
-if(!base64Url||String(base64Url).indexOf("data:")!==0)return null;
-return{alt:gAlt,url:String(base64Url)};
+var srcKey="",orig;
+try{srcKey=String((gImg&&gImg.src)||"");}catch(eK){srcKey="";}
+if(srcKey&&seenImages.has(srcKey))return;
+orig=chatGptImgSrc(gImg);
+try{if(!orig)orig=String((gImg&&(gImg.currentSrc||gImg.src))||"");}catch(eS){}
+if(orig&&seenImages.has(orig))return;
+if(!orig||orig.indexOf("data:image/svg")===0)return;
+if(srcKey)seenImages.add(srcKey);
+if(orig)seenImages.add(orig);
+jobs.push(imgToThumbJpeg(gImg).then(function(thumb){
+if(!thumb||String(thumb).indexOf("data:image/jpeg")!==0)thumb="";
+if(!thumb&&(orig.indexOf("blob:")===0||orig.indexOf("data:")===0))return null;
+return{thumb:String(thumb||""),orig:String(orig)};
 }));
 })(gImgs[g]);
 }
 return Promise.all(jobs).then(function(rows){
 var out=String(payload||"");
-var added=0,i,row;
+var added=0,i,row,block,imgSrc;
 for(i=0;i<rows.length;i++){
 row=rows[i];
-if(!row||!row.url)continue;
+if(!row||!row.orig)continue;
+imgSrc=row.thumb||row.orig;
+block="[AI Generated Image]\\n[![Thumbnail]("+imgSrc+")]("+row.orig+")\\n[View Original Image]("+row.orig+")\\n\\n";
 if(!added){
 if(!out)out="ChatGPT:\\n";
 out=out+"\\n\\n--- Extracted Images ---\\n\\n";
 added=1;
 }
-out=out+"[AI Generated Image]\\n!["+row.alt+"]("+row.url+")\\n\\n";
+out=out+block;
 }
 out=String(out||"").replace(/^\\s+|\\s+$/g,"");
 return out||null;
