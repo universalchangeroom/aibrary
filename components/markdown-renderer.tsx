@@ -224,18 +224,20 @@ export function MarkdownRenderer({
   return (
     <div
       className={cn(
-        "max-w-none text-sm leading-relaxed text-foreground",
-        // Tight paragraph rhythm — avoid awkward double-spacing in previews.
-        "[&_p]:my-1 [&_p]:mb-2 [&_p]:whitespace-pre-wrap",
+        // Conversation preview: tight vertical rhythm (no typography plugin —
+        // prose-p:* equivalents via [&_…] so margins actually apply).
+        "prose max-w-none text-sm leading-snug text-foreground",
+        "prose-p:my-0 prose-p:mb-1 prose-headings:my-1 prose-ul:my-0 prose-li:my-0",
+        "[&_p]:my-0 [&_p]:mb-1 [&_p]:leading-snug",
         "[&_strong]:font-semibold [&_strong]:text-foreground",
         "[&_em]:italic",
-        "[&_h1]:mb-2 [&_h1]:mt-3 [&_h1]:text-xl [&_h1]:font-semibold",
-        "[&_h2]:mb-1.5 [&_h2]:mt-3 [&_h2]:text-lg [&_h2]:font-semibold",
-        "[&_h3]:mb-1 [&_h3]:mt-2.5 [&_h3]:text-base [&_h3]:font-semibold",
-        "[&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:space-y-0.5 [&_ul]:pl-5",
-        "[&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:space-y-0.5 [&_ol]:pl-5",
-        "[&_li]:my-0 [&_li]:marker:text-muted-foreground",
-        "[&_blockquote]:my-1.5 [&_blockquote]:rounded-r-md [&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:bg-muted/40 [&_blockquote]:py-1 [&_blockquote]:pl-3 [&_blockquote]:pr-2 [&_blockquote]:text-muted-foreground",
+        "[&_h1]:my-1 [&_h1]:text-xl [&_h1]:font-semibold [&_h1]:leading-snug",
+        "[&_h2]:my-1 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:leading-snug",
+        "[&_h3]:my-1 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:leading-snug",
+        "[&_ul]:my-0 [&_ul]:list-disc [&_ul]:space-y-0 [&_ul]:pl-5",
+        "[&_ol]:my-0 [&_ol]:list-decimal [&_ol]:space-y-0 [&_ol]:pl-5",
+        "[&_li]:my-0 [&_li]:leading-snug [&_li]:marker:text-muted-foreground",
+        "[&_blockquote]:my-1 [&_blockquote]:rounded-r-md [&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:bg-muted/40 [&_blockquote]:py-0.5 [&_blockquote]:pl-3 [&_blockquote]:pr-2 [&_blockquote]:text-muted-foreground",
         "[&_a]:font-medium [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2",
         "[&_a:has(img)]:font-normal [&_a:has(img)]:no-underline",
         "[&_hr]:my-4 [&_hr]:border-border",

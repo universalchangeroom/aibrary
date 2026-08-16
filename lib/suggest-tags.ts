@@ -15,8 +15,9 @@ const MD_LINK_RE = /\[[^\]]*\]\([^)]*\)/g;
 const DATA_URI_RE = /data:[a-z0-9.+/-]+;base64,[a-z0-9+/=]+/gi;
 const URL_RE = /https?:\/\/\S+/gi;
 const WWW_URL_RE = /\bwww\.\S+/gi;
-/** Keep letters / apostrophes / hyphens only — drop digits that create hash-like tokens. */
-const NON_WORD_RE = /[^a-z\s'-]+/g;
+/** Keep letters / apostrophes / hyphens only — drop digits that create hash-like tokens.
+ * Uppercase must be allowed here; lowercase is applied after this strip. */
+const NON_WORD_RE = /[^a-zA-Z\s'-]+/g;
 
 const STOP_WORDS = new Set([
   "a",
