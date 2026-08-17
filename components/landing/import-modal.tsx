@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type DragEvent, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Sparkles, Upload } from "lucide-react";
+import { ImageIcon, Loader2, Sparkles, Upload } from "lucide-react";
 
 import { MarkdownRenderer } from "@/components/markdown-renderer";
 import {
@@ -30,6 +30,7 @@ import {
   CHATSHARE_PENDING_IMPORT_KEY,
 } from "@/lib/bookmarklet";
 import type { ImportedMessage } from "@/lib/import-link/types";
+import { messagesToLabeledTranscript } from "@/lib/messages-to-transcript";
 import { parseTags } from "@/lib/parse-transcript";
 import { parseRawText } from "@/lib/parse-raw-text";
 import { suggestTags } from "@/lib/suggest-tags";
@@ -40,7 +41,15 @@ interface ImportModalProps {
   triggerClassName?: string;
 }
 
-type ImportMode = "link" | "text";
+type ImportMode = "link" | "text" | "screenshot";
+
+const SCREENSHOT_ACCEPT = ".png,.jpg,.jpeg,.webp";
+const SCREENSHOT_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+]);
 
 type ParsedPreview = {
   source: string;
@@ -192,6 +201,7 @@ export function ImportModal({
   const [rawText, setRawText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isParsingText, setIsParsingText] = useState(false);
+  const [isParsingScreenshot, setIsParsingScreenshot] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Parsed thread kept in memory across auth so sign-in does not drop the draft. */
@@ -202,6 +212,11 @@ export function ImportModal({
   const publishInFlightRef = useRef(false);
   const pendingImportHandledRef = useRef(false);
   const editorRef = useRef<RichTextEditorHandle>(null);
+  const screenshotInputRef = useRef<HTMLInputElement>(null);
+  const [screenshotDragActive, setScreenshotDragActive] = useState(false);
+  const [screenshotFileName, setScreenshotFileName] = useState<string | null>(
+    null
+  );
   const [showPasteHint, setShowPasteHint] = useState(false);
   const [pasteSourceLabel, setPasteSourceLabel] = useState("Gemini");
   const [tagsInput, setTagsInput] = useState("");
@@ -289,7 +304,10 @@ export function ImportModal({
     setResult(null);
     setIsLoading(false);
     setIsParsingText(false);
+    setIsParsingScreenshot(false);
     setIsPublishing(false);
+    setScreenshotDragActive(false);
+    setScreenshotFileName(null);
     publishAfterAuthRef.current = false;
     publishInFlightRef.current = false;
   }
@@ -513,14 +531,37 @@ export function ImportModal({
       }
     }
 
-    preview = preview ?? (mode === "text" ? livePreview : null);
+    if (mode === "screenshot" && preview) {
+      const parsed = parseRawText(markdown);
+      const messages = (parsed.messages ?? []).filter(
+        (m) =>
+          (m.role === "user" || m.role === "assistant") &&
+          typeof m.content === "string" &&
+          m.content.trim().length > 0
+      );
+      preview = {
+        ...preview,
+        messages:
+          messages.length > 0
+            ? messages.map((m) => ({ role: m.role, content: m.content }))
+            : preview.messages,
+      };
+      setResult(preview);
+    }
+
+    preview =
+      preview ??
+      (mode === "text"
+        ? livePreview
+        : mode === "screenshot"
+          ? result
+          : null);
     if (!preview || preview.messages.length === 0) return;
 
     const accessToken = session?.access_token;
     if (!accessToken) {
-      // Keep draft in state; open auth so user can continue after sign-in.
-      if (!result && livePreview) {
-        setResult(livePreview);
+      if (!result && (livePreview || preview)) {
+        setResult(livePreview ?? preview);
       }
       publishAfterAuthRef.current = true;
       setAuthOpen(true);
@@ -533,7 +574,8 @@ export function ImportModal({
 
   /** After sign-in/up from AuthModal, publish the draft if the user intended to. */
   async function handleAuthSuccess() {
-    const preview = result ?? (mode === "text" ? livePreview : null);
+    const preview =
+      result ?? (mode === "text" ? livePreview : mode === "screenshot" ? result : null);
     if (!publishAfterAuthRef.current || !preview) return;
 
     publishAfterAuthRef.current = false;
@@ -572,6 +614,83 @@ export function ImportModal({
     void publishThread(token, result);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resume only when session appears after deferred publish
   }, [session?.access_token, result, isPublishing, authOpen]);
+
+  async function handleScreenshotFile(file: File) {
+    setError(null);
+    setResult(null);
+
+    const mime = (file.type || "").toLowerCase();
+    if (!SCREENSHOT_MIME.has(mime)) {
+      setError("Unsupported file type. Use PNG, JPG, or WebP.");
+      return;
+    }
+
+    setScreenshotFileName(file.name);
+    setIsParsingScreenshot(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/parse-screenshot", {
+        method: "POST",
+        body: formData,
+      });
+
+      const payload: unknown = await response.json();
+      if (!response.ok) {
+        const err = payload as { error?: string };
+        throw new Error(err.error || "Failed to parse screenshot.");
+      }
+
+      const preview = normalizeParseTextPayload(payload);
+      if (preview.messages.length === 0) {
+        throw new Error(
+          "No conversation turns were detected in this screenshot."
+        );
+      }
+
+      const transcript = messagesToLabeledTranscript(
+        preview.messages,
+        preview.source
+      );
+
+      setResult(preview);
+      setRawText(transcript);
+      setSuggestedTags(suggestTags(transcript, 5));
+      setMode("screenshot");
+    } catch (err) {
+      setResult(null);
+      setError(
+        err instanceof Error ? err.message : "Failed to parse screenshot."
+      );
+    } finally {
+      setIsParsingScreenshot(false);
+    }
+  }
+
+  function handleScreenshotInputChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (file) void handleScreenshotFile(file);
+    event.target.value = "";
+  }
+
+  function handleScreenshotDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setScreenshotDragActive(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) void handleScreenshotFile(file);
+  }
+
+  function handleScreenshotDragOver(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setScreenshotDragActive(true);
+  }
+
+  function handleScreenshotDragLeave(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setScreenshotDragActive(false);
+  }
 
   async function handleImport(event: FormEvent) {
     event.preventDefault();
@@ -628,17 +747,20 @@ export function ImportModal({
     }
   }
 
-  const isBusy = isLoading || isParsingText || isPublishing;
-  // Keep the paste form visible for live preview; link mode still flips to result card.
+  const isBusy =
+    isLoading || isParsingText || isParsingScreenshot || isPublishing;
   const showTextForm = mode === "text" && !isParsingText;
   const showLinkForm = mode === "link" && !result;
   const showLinkResult = Boolean(result && mode === "link");
+  const screenshotPreview = mode === "screenshot" ? result : null;
   const publishablePreview =
     result && mode === "link"
       ? result
       : mode === "text"
         ? livePreview
-        : result;
+        : mode === "screenshot"
+          ? screenshotPreview
+          : result;
 
   return (
     <>
@@ -658,12 +780,12 @@ export function ImportModal({
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Import a conversation</DialogTitle>
           <DialogDescription>
-            Paste a public ChatGPT or DeepSeek share link, or paste conversation
-            text copied from ChatGPT, Claude, or DeepSeek.
+            Paste a public share link, conversation text, or upload a mobile
+            scrolling screenshot to import a thread.
           </DialogDescription>
         </DialogHeader>
 
@@ -691,12 +813,15 @@ export function ImportModal({
             }}
             className="w-full"
           >
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="link" disabled={isBusy}>
+            <TabsList className="grid h-auto w-full grid-cols-3 gap-1">
+              <TabsTrigger value="link" disabled={isBusy} className="text-xs sm:text-sm">
                 Paste Link
               </TabsTrigger>
-              <TabsTrigger value="text" disabled={isBusy}>
+              <TabsTrigger value="text" disabled={isBusy} className="text-xs sm:text-sm">
                 Paste Text
+              </TabsTrigger>
+              <TabsTrigger value="screenshot" disabled={isBusy} className="text-xs sm:text-sm">
+                Upload Screenshot
               </TabsTrigger>
             </TabsList>
 
@@ -931,6 +1056,229 @@ export function ImportModal({
                 <BookmarkletCard />
               </TabsContent>
             ) : null}
+
+            <TabsContent value="screenshot" className="mt-4 space-y-4">
+              {isParsingScreenshot ? (
+                <div className="flex items-center justify-center gap-2 rounded-md border border-dashed px-4 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Reading screenshot and extracting conversation…
+                </div>
+              ) : (
+                <>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      screenshotInputRef.current?.click();
+                    }
+                  }}
+                  onDragOver={handleScreenshotDragOver}
+                  onDragLeave={handleScreenshotDragLeave}
+                  onDrop={handleScreenshotDrop}
+                  onClick={() => screenshotInputRef.current?.click()}
+                  className={cn(
+                    "flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors",
+                    screenshotDragActive
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-muted/30 hover:border-primary/50 hover:bg-muted/50"
+                  )}
+                >
+                  <ImageIcon className="h-10 w-10 text-muted-foreground" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-foreground">
+                      Drop a mobile chat screenshot here
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      PNG, JPG, or WebP — long scrolling captures supported
+                    </p>
+                    {screenshotFileName ? (
+                      <p className="text-xs font-medium text-primary">
+                        Last file: {screenshotFileName}
+                      </p>
+                    ) : null}
+                  </div>
+                  <Button type="button" variant="secondary" size="sm" asChild>
+                    <span>Choose image</span>
+                  </Button>
+                  <input
+                    ref={screenshotInputRef}
+                    type="file"
+                    accept={SCREENSHOT_ACCEPT}
+                    className="sr-only"
+                    onChange={handleScreenshotInputChange}
+                    disabled={isParsingScreenshot}
+                  />
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  We use a vision model to detect User vs AI turns and rebuild
+                  Markdown (code blocks, lists, and formatting preserved).
+                </p>
+
+                {screenshotPreview && screenshotPreview.messages.length > 0 ? (
+                  <>
+                    <div className="rounded-md border bg-muted/40 p-4">
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <Badge variant="secondary">
+                          {screenshotPreview.source}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {screenshotPreview.messages.length} messages
+                        </span>
+                      </div>
+                      <h4 className="mb-2 text-sm font-semibold text-foreground">
+                        Conversation Preview
+                      </h4>
+                      <div className="max-h-64 space-y-3 overflow-y-auto">
+                        {screenshotPreview.messages.map((msg, idx) => {
+                          const isUser = msg.role === "user";
+                          return (
+                            <div
+                              key={`${msg.role}-${idx}`}
+                              className={cn(
+                                "rounded border p-3 text-sm",
+                                isUser
+                                  ? "border-border bg-muted/50 text-foreground"
+                                  : "border-border bg-background text-foreground"
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "mb-2 inline-block rounded px-2 py-0.5 text-xs font-bold uppercase",
+                                  isUser
+                                    ? "bg-secondary text-secondary-foreground"
+                                    : "bg-primary/15 text-primary"
+                                )}
+                              >
+                                {isUser ? "USER" : "AI"}
+                              </span>
+                              <MarkdownRenderer content={msg.content} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="home-import-screenshot-title">
+                        Thread title
+                      </Label>
+                      <Input
+                        id="home-import-screenshot-title"
+                        value={screenshotPreview.title}
+                        onChange={(event) => {
+                          const title = event.target.value;
+                          setResult((prev) =>
+                            prev ? { ...prev, title } : prev
+                          );
+                        }}
+                        disabled={isPublishing}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="home-import-screenshot-text">
+                        Editable transcript
+                      </Label>
+                      <RichTextEditor
+                        ref={editorRef}
+                        content={rawText}
+                        onChange={(markdown) => {
+                          setRawText(markdown);
+                          setError(null);
+                        }}
+                        placeholder="Parsed transcript appears here…"
+                        editable={!isPublishing}
+                        dense
+                        editorClassName="min-h-[160px]"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-end justify-between gap-2">
+                        <Label htmlFor="home-import-screenshot-tags">Tags</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleSuggestTags}
+                          disabled={isPublishing || !rawText.trim()}
+                        >
+                          <Sparkles className="h-4 w-4" />
+                          Suggest Tags
+                        </Button>
+                      </div>
+                      <Input
+                        id="home-import-screenshot-tags"
+                        value={tagsInput}
+                        onChange={(event) => setTagsInput(event.target.value)}
+                        placeholder="react, nextjs, authentication"
+                        disabled={isPublishing}
+                        autoComplete="off"
+                      />
+                      {visibleSuggestedTags.length > 0 ? (
+                        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                          {visibleSuggestedTags.map((tag) => (
+                            <button
+                              key={tag}
+                              type="button"
+                              onClick={() => appendSuggestedTag(tag)}
+                              className="focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                              aria-label={`Add tag ${tag}`}
+                            >
+                              <Badge
+                                variant="outline"
+                                className="cursor-pointer border-dashed hover:border-primary hover:bg-primary/5"
+                              >
+                                + {tag}
+                              </Badge>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        onClick={() => void handlePublish()}
+                        disabled={
+                          !screenshotPreview || isPublishing || isAuthLoading
+                        }
+                      >
+                        {isPublishing ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Publishing…
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-4 w-4" />
+                            {session ? "Publish Thread" : "Sign in & Publish"}
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={isPublishing}
+                        onClick={() => {
+                          setRawText("");
+                          setResult(null);
+                          setScreenshotFileName(null);
+                          setError(null);
+                        }}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </>
+                ) : null}
+                </>
+              )}
+            </TabsContent>
 
             {/* Keep tab content mounted while loading text mode without the textarea */}
             {mode === "text" && isParsingText ? (
