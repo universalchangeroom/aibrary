@@ -19,6 +19,7 @@ export interface Thread {
   source_model: string | null;
   tags: string[];
   is_public: boolean;
+  total_tokens?: number;
   /** published = public feed; pending_review = image content awaiting admin */
   status?: ThreadStatus | string;
   created_at: string;

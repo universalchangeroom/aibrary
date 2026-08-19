@@ -30,7 +30,7 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
   const { data, error } = await supabase
     .from("threads")
     .select(
-      "id, author_id, title, content, source_model, tags, is_public, status, created_at, updated_at, footnotes(*)"
+      "id, author_id, title, content, source_model, tags, is_public, status, total_tokens, created_at, updated_at, footnotes(*)"
     )
     .eq("id", id)
     .order("created_at", { ascending: true, foreignTable: "footnotes" })
@@ -56,6 +56,7 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
 
   const footnotes = asFootnotes(data.footnotes);
   const footnoteIds = footnotes.map((footnote) => footnote.id);
+  const currentUserId = user?.id ?? null;
 
   const voteQueries = [
     supabase
@@ -118,6 +119,29 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
     userVote: threadVoteSummary.userVote,
   };
 
+  let viewerTokenBalance: number | null = null;
+  let viewerHasStarred = false;
+
+  if (currentUserId) {
+    const [{ data: profile }, { data: star }] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("token_balance")
+        .eq("id", currentUserId)
+        .maybeSingle(),
+      supabase
+        .from("starred_threads")
+        .select("user_id, thread_id")
+        .eq("user_id", currentUserId)
+        .eq("thread_id", id)
+        .maybeSingle(),
+    ]);
+
+    viewerTokenBalance =
+      typeof profile?.token_balance === "number" ? profile.token_balance : 0;
+    viewerHasStarred = Boolean(star);
+  }
+
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-12">
       <Button variant="ghost" size="sm" className="-ml-2 w-fit" asChild>
@@ -131,6 +155,9 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
         key={thread.id}
         thread={thread}
         isAuthenticated={Boolean(user)}
+        currentUserId={currentUserId}
+        viewerTokenBalance={viewerTokenBalance}
+        viewerHasStarred={viewerHasStarred}
       />
     </main>
   );

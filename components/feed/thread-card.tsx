@@ -9,7 +9,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { VoteButtons } from "@/components/ui/vote-buttons";
 import { FormattedTime } from "@/components/formatted-time";
 import type { ChatMessage, ThreadWithFootnotes } from "@/lib/types";
 
@@ -35,16 +34,7 @@ export function ThreadCard({ thread }: ThreadCardProps) {
   const hasFootnotes = (thread.footnotes ?? []).length > 0;
 
   return (
-    <div className="flex gap-2 rounded-xl focus-within:ring-2 focus-within:ring-ring">
-      <VoteButtons
-        targetType="thread"
-        targetId={thread.id}
-        initialScore={thread.score}
-        userVote={thread.userVote}
-        revalidatePathName="/feed"
-        className="pt-4"
-      />
-
+    <div className="rounded-xl focus-within:ring-2 focus-within:ring-ring">
       <Link
         href={`/feed/${thread.id}`}
         className="min-w-0 flex-1 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -72,6 +62,13 @@ export function ThreadCard({ thread }: ThreadCardProps) {
                 </Badge>
               ) : null}
             </div>
+
+            <p className="text-sm font-semibold text-primary">
+              Props:{" "}
+              <span className="text-base">
+                {typeof thread.total_tokens === "number" ? thread.total_tokens : 0}
+              </span>
+            </p>
 
             <div className="flex flex-wrap gap-2">
               {tags.map((tag) => (

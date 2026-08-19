@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { AddFootnoteDialog } from "@/components/feed/add-footnote-dialog";
 import { ConversationView } from "@/components/feed/conversation-view";
 import { FootnoteSheet } from "@/components/feed/footnote-sheet";
+import { ThreadActions } from "@/components/feed/thread-actions";
 import { FormattedTime } from "@/components/formatted-time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,9 @@ import {
 interface ThreadDetailViewProps {
   thread: ThreadWithFootnotes;
   isAuthenticated: boolean;
+  currentUserId: string | null;
+  viewerTokenBalance: number | null;
+  viewerHasStarred: boolean;
 }
 
 type EditLayout = "cards" | "raw";
@@ -142,6 +146,9 @@ async function parseTranscriptViaApi(text: string): Promise<ChatMessage[]> {
 export function ThreadDetailView({
   thread: initialThread,
   isAuthenticated,
+  currentUserId,
+  viewerTokenBalance,
+  viewerHasStarred,
 }: ThreadDetailViewProps) {
   const router = useRouter();
   const { user, session } = useAuth();
@@ -691,6 +698,19 @@ export function ThreadDetailView({
               </Badge>
             ))}
           </div>
+        ) : null}
+
+        {!isEditing ? (
+          <ThreadActions
+            threadId={thread.id}
+            authorId={thread.author_id}
+            currentUserId={currentUserId}
+            initialTotalTokens={
+              typeof thread.total_tokens === "number" ? thread.total_tokens : 0
+            }
+            initialTokenBalance={viewerTokenBalance}
+            initialStarred={viewerHasStarred}
+          />
         ) : null}
       </header>
 

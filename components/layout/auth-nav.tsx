@@ -9,6 +9,8 @@ import {
   LogOut,
   Share2,
   Shield,
+  Star,
+  Settings,
   UserRound,
 } from "lucide-react";
 
@@ -155,6 +157,24 @@ export function AuthNav() {
                 Moderation
               </Link>
             ) : null}
+            <Link
+              href="/dashboard/starred"
+              role="menuitem"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+              onClick={() => setMenuOpen(false)}
+            >
+              <Star className="h-4 w-4" />
+              Starred
+            </Link>
+            <Link
+              href="/dashboard/settings"
+              role="menuitem"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+              onClick={() => setMenuOpen(false)}
+            >
+              <Settings className="h-4 w-4" />
+              Settings
+            </Link>
             <button
               type="button"
               role="menuitem"
