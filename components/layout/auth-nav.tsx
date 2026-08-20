@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Loader2,
   LogOut,
+  NotebookText,
   Share2,
   Shield,
   Star,
@@ -18,7 +19,6 @@ import { AuthModal } from "@/components/auth/auth-modal";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { isAdminEmail } from "@/lib/admin";
-import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 function userInitials(email: string | undefined): string {
@@ -60,6 +60,7 @@ export function AuthNav() {
     setIsSigningOut(true);
     setMenuOpen(false);
     try {
+      const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
       await supabase.auth.signOut();
       router.push("/");
@@ -157,6 +158,15 @@ export function AuthNav() {
                 Moderation
               </Link>
             ) : null}
+            <Link
+              href={`/user/${encodeURIComponent(user.id)}`}
+              role="menuitem"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+              onClick={() => setMenuOpen(false)}
+            >
+              <NotebookText className="h-4 w-4" />
+              My Portfolio
+            </Link>
             <Link
               href="/dashboard/starred"
               role="menuitem"
