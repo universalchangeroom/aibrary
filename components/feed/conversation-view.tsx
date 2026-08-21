@@ -1,6 +1,7 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, ChevronsUpDown, Plus, Trash2 } from "lucide-react";
 
 import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { RichTextEditor } from "@/components/rich-text-editor";
@@ -18,6 +19,20 @@ interface ConversationViewProps {
   onAddMessage?: () => void;
 }
 
+type ViewTurn =
+  | {
+      kind: "pair";
+      user: ChatMessage;
+      userIndex: number;
+      assistant: ChatMessage | null;
+      assistantIndex: number | null;
+    }
+  | {
+      kind: "orphan";
+      message: ChatMessage;
+      index: number;
+    };
+
 function RoleBadge({ isUser }: { isUser: boolean }) {
   return (
     <span
@@ -30,6 +45,99 @@ function RoleBadge({ isUser }: { isUser: boolean }) {
     >
       {isUser ? "USER" : "AI"}
     </span>
+  );
+}
+
+function messageShellClass(isUser: boolean) {
+  return cn(
+    "rounded-xl border p-4 sm:p-5",
+    isUser
+      ? "ml-0 border-border bg-muted/50 text-foreground sm:mr-12"
+      : "mr-0 border-border bg-card text-card-foreground sm:ml-12"
+  );
+}
+
+/** Pair each user prompt with the following AI reply for collapsible view mode. */
+function buildViewTurns(messages: ChatMessage[]): ViewTurn[] {
+  const turns: ViewTurn[] = [];
+  let i = 0;
+
+  while (i < messages.length) {
+    const message = messages[i];
+    if (message.role === "user") {
+      const next = messages[i + 1];
+      const hasAssistant = next?.role === "assistant";
+      turns.push({
+        kind: "pair",
+        user: message,
+        userIndex: i,
+        assistant: hasAssistant ? next : null,
+        assistantIndex: hasAssistant ? i + 1 : null,
+      });
+      i += hasAssistant ? 2 : 1;
+      continue;
+    }
+
+    turns.push({ kind: "orphan", message, index: i });
+    i += 1;
+  }
+
+  return turns;
+}
+
+function MessageBody({
+  message,
+  isUser,
+  index,
+  isEditing,
+  onMessageContentChange,
+  onRemoveMessage,
+  chevron,
+}: {
+  message: ChatMessage;
+  isUser: boolean;
+  index: number;
+  isEditing: boolean;
+  onMessageContentChange?: (index: number, content: string) => void;
+  onRemoveMessage?: (index: number) => void;
+  chevron?: boolean;
+}) {
+  return (
+    <article className={messageShellClass(isUser)}>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <RoleBadge isUser={isUser} />
+        {chevron ? (
+          <ChevronDown
+            className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-180"
+            aria-hidden
+          />
+        ) : null}
+        {isEditing && onRemoveMessage ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-destructive"
+            onClick={() => onRemoveMessage(index)}
+            aria-label={`Delete ${isUser ? "user" : "AI"} message`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        ) : null}
+      </div>
+
+      {isEditing && onMessageContentChange ? (
+        <RichTextEditor
+          content={message.content}
+          onChange={(markdown) => onMessageContentChange(index, markdown)}
+          placeholder={isUser ? "User message…" : "Assistant / AI response…"}
+          className="bg-background"
+          editorClassName="min-h-[120px]"
+        />
+      ) : (
+        <MarkdownRenderer content={message.content} />
+      )}
+    </article>
   );
 }
 
@@ -46,6 +154,35 @@ export function ConversationView({
     ? messages
     : messages.filter((message) => message.role !== "system");
 
+  const viewTurns = !isEditing ? buildViewTurns(list) : [];
+  const pairTurnIds = viewTurns
+    .filter(
+      (turn): turn is Extract<ViewTurn, { kind: "pair" }> =>
+        turn.kind === "pair"
+    )
+    .map((turn) => turn.userIndex);
+
+  const [openTurnIds, setOpenTurnIds] = useState<Set<number>>(() => new Set());
+
+  const allExpanded =
+    pairTurnIds.length > 0 &&
+    pairTurnIds.every((id) => openTurnIds.has(id));
+
+  function toggleExpandAll() {
+    setOpenTurnIds(allExpanded ? new Set() : new Set(pairTurnIds));
+  }
+
+  function handleTurnToggle(userIndex: number, isOpen: boolean) {
+    setOpenTurnIds((prev) => {
+      const alreadyOpen = prev.has(userIndex);
+      if (isOpen === alreadyOpen) return prev;
+      const next = new Set(prev);
+      if (isOpen) next.add(userIndex);
+      else next.delete(userIndex);
+      return next;
+    });
+  }
+
   return (
     <section className="flex flex-col gap-5" aria-label="Conversation">
       {list.length === 0 ? (
@@ -54,53 +191,88 @@ export function ConversationView({
         </p>
       ) : null}
 
-      {list.map((message, index) => {
-        const isUser = message.role === "user";
-
-        return (
-          <article
-            key={`${message.role}-${index}`}
-            className={cn(
-              "rounded-xl border p-4 sm:p-5",
-              isUser
-                ? "ml-0 border-border bg-muted/50 text-foreground sm:mr-12"
-                : "mr-0 border-border bg-card text-card-foreground sm:ml-12"
-            )}
+      {!isEditing && pairTurnIds.length > 0 ? (
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={toggleExpandAll}
+            aria-pressed={allExpanded}
           >
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <RoleBadge isUser={isUser} />
-              {isEditing && onRemoveMessage ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-destructive"
-                  onClick={() => onRemoveMessage(index)}
-                  aria-label={`Delete ${isUser ? "user" : "AI"} message`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              ) : null}
-            </div>
+            <ChevronsUpDown className="h-4 w-4" />
+            {allExpanded ? "Collapse All" : "Expand All"}
+          </Button>
+        </div>
+      ) : null}
 
-            {isEditing && onMessageContentChange ? (
-              <RichTextEditor
-                content={message.content}
-                onChange={(markdown) =>
-                  onMessageContentChange(index, markdown)
-                }
-                placeholder={
-                  isUser ? "User message…" : "Assistant / AI response…"
-                }
-                className="bg-background"
-                editorClassName="min-h-[120px]"
+      {isEditing
+        ? list.map((message, index) => {
+            const isUser = message.role === "user";
+            return (
+              <MessageBody
+                key={`${message.role}-${index}`}
+                message={message}
+                isUser={isUser}
+                index={index}
+                isEditing
+                onMessageContentChange={onMessageContentChange}
+                onRemoveMessage={onRemoveMessage}
               />
-            ) : (
-              <MarkdownRenderer content={message.content} />
-            )}
-          </article>
-        );
-      })}
+            );
+          })
+        : viewTurns.map((turn) => {
+            if (turn.kind === "orphan") {
+              return (
+                <MessageBody
+                  key={`orphan-${turn.message.role}-${turn.index}`}
+                  message={turn.message}
+                  isUser={turn.message.role === "user"}
+                  index={turn.index}
+                  isEditing={false}
+                />
+              );
+            }
+
+            return (
+              <details
+                key={`turn-${turn.userIndex}`}
+                className="group flex flex-col gap-5"
+                open={openTurnIds.has(turn.userIndex)}
+                onToggle={(event) => {
+                  handleTurnToggle(turn.userIndex, event.currentTarget.open);
+                }}
+              >
+                <summary
+                  className={cn(
+                    "cursor-pointer list-none [&::-webkit-details-marker]:hidden",
+                    "rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  )}
+                >
+                  <MessageBody
+                    message={turn.user}
+                    isUser
+                    index={turn.userIndex}
+                    isEditing={false}
+                    chevron
+                  />
+                </summary>
+
+                {turn.assistant ? (
+                  <MessageBody
+                    message={turn.assistant}
+                    isUser={false}
+                    index={turn.assistantIndex ?? turn.userIndex + 1}
+                    isEditing={false}
+                  />
+                ) : (
+                  <p className="rounded-xl border border-dashed px-4 py-3 text-sm text-muted-foreground sm:ml-12">
+                    No AI response for this prompt.
+                  </p>
+                )}
+              </details>
+            );
+          })}
 
       {isEditing && onAddMessage ? (
         <div className="flex justify-center pt-1">
