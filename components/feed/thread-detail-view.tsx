@@ -527,129 +527,148 @@ export function ThreadDetailView({
         </div>
       ) : null}
 
-      <header className="space-y-4 border-b pb-8">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-1 space-y-3">
+      <header className="space-y-5 border-b pb-8">
+        {/* Title — full width, never competes with action buttons */}
+        <div className="min-w-0 space-y-2">
+          {isEditing ? (
             <div className="flex flex-wrap items-center gap-2">
-              {isEditing ? (
-                <Input
-                  type="text"
-                  value={editTitle}
-                  onChange={(event) => {
-                    setEditTitle(event.target.value);
-                    if (saveError) setSaveError(null);
-                  }}
-                  aria-label="Thread title"
-                  disabled={isSaving}
-                  className="h-auto max-w-2xl border-primary/40 px-3 py-2 text-2xl font-bold tracking-tight shadow-none sm:text-3xl"
-                />
-              ) : (
-                <h1 className="text-3xl font-bold tracking-tight">
-                  {thread.title}
-                </h1>
-              )}
-              {footnoteCount > 0 && !isEditing ? (
-                <span className="inline-flex text-amber-600" aria-hidden>
+              <Input
+                type="text"
+                value={editTitle}
+                onChange={(event) => {
+                  setEditTitle(event.target.value);
+                  if (saveError) setSaveError(null);
+                }}
+                aria-label="Thread title"
+                disabled={isSaving}
+                className="h-auto w-full border-primary/40 px-3 py-2 text-2xl font-bold tracking-tight shadow-none sm:text-3xl"
+              />
+              <Badge
+                variant="outline"
+                className="border-primary/40 text-primary"
+              >
+                Editing
+              </Badge>
+            </div>
+          ) : (
+            <h1 className="flex min-w-0 items-start gap-2 text-2xl font-bold tracking-tight break-words sm:text-3xl">
+              <span className="min-w-0 flex-1">{thread.title}</span>
+              {footnoteCount > 0 ? (
+                <span className="mt-1 shrink-0 text-amber-600" aria-hidden>
                   <MessageSquareWarning className="h-5 w-5" />
                 </span>
               ) : null}
-              {isEditing ? (
-                <Badge
-                  variant="outline"
-                  className="border-primary/40 text-primary"
-                >
-                  Editing
-                </Badge>
+            </h1>
+          )}
+        </div>
+
+        {/* Metadata: model, date, tags */}
+        {!isEditing ? (
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {thread.source_model ? (
+                <Badge variant="secondary">{thread.source_model}</Badge>
+              ) : null}
+              {thread.created_at ? (
+                <FormattedTime
+                  date={thread.created_at}
+                  className="text-sm text-muted-foreground"
+                />
               ) : null}
             </div>
-            {thread.source_model ? (
-              <Badge variant="secondary">{thread.source_model}</Badge>
-            ) : null}
-            {thread.created_at ? (
-              <FormattedTime
-                date={thread.created_at}
-                className="block text-sm text-muted-foreground"
-              />
+            {thread.tags.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {thread.tags.map((tag) => (
+                  <Badge key={tag} variant="outline">
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
             ) : null}
           </div>
+        ) : null}
 
-          <div className="flex flex-wrap gap-2">
-            {isAuthenticated && !isEditing ? (
-              <AddFootnoteDialog threadId={thread.id} />
-            ) : null}
-            {footnoteCount > 0 && !isEditing ? (
-              <FootnoteSheet
-                footnotes={thread.footnotes}
-                threadId={thread.id}
-                trigger="header"
-              />
-            ) : null}
-            {!isEditing ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void copyThreadAsMarkdown()}
-                >
-                  {markdownCopied ? (
-                    <Check className="h-4 w-4" />
-                  ) : (
-                    <ClipboardCopy className="h-4 w-4" />
-                  )}
-                  {markdownCopied ? "Copied!" : "Copy as Markdown"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={downloadThreadMarkdown}
-                >
-                  <Download className="h-4 w-4" />
-                  Download .md
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={copySystemPrompt}
-                >
-                  {copied ? (
-                    <Check className="h-4 w-4" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
-                  {copied ? "Copied" : "Copy System Prompt"}
-                </Button>
-              </>
-            ) : null}
-            {isOwner && !isEditing ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={enterEditMode}
-                >
-                  <Pencil className="h-4 w-4" />
-                  Edit Thread
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => {
-                    setDeleteError(null);
-                    setDeleteOpen(true);
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Delete Thread
-                </Button>
-              </>
-            ) : null}
-            {isEditing ? editActions : null}
-          </div>
+        {/* Utility actions — own row beneath metadata; wraps on narrow viewports */}
+        <div
+          className="flex flex-wrap items-center gap-2"
+          role="toolbar"
+          aria-label="Thread utilities"
+        >
+          {isAuthenticated && !isEditing ? (
+            <AddFootnoteDialog threadId={thread.id} />
+          ) : null}
+          {footnoteCount > 0 && !isEditing ? (
+            <FootnoteSheet
+              footnotes={thread.footnotes}
+              threadId={thread.id}
+              trigger="header"
+            />
+          ) : null}
+          {!isEditing ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void copyThreadAsMarkdown()}
+              >
+                {markdownCopied ? (
+                  <Check className="h-4 w-4" />
+                ) : (
+                  <ClipboardCopy className="h-4 w-4" />
+                )}
+                {markdownCopied ? "Copied!" : "Copy as Markdown"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={downloadThreadMarkdown}
+              >
+                <Download className="h-4 w-4" />
+                Download .md
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={copySystemPrompt}
+              >
+                {copied ? (
+                  <Check className="h-4 w-4" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+                {copied ? "Copied" : "Copy System Prompt"}
+              </Button>
+            </>
+          ) : null}
+          {isOwner && !isEditing ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={enterEditMode}
+              >
+                <Pencil className="h-4 w-4" />
+                Edit Thread
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={() => {
+                  setDeleteError(null);
+                  setDeleteOpen(true);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete Thread
+              </Button>
+            </>
+          ) : null}
+          {isEditing ? editActions : null}
         </div>
 
         {isEditing && saveError ? (
@@ -690,27 +709,22 @@ export function ThreadDetailView({
           </div>
         ) : null}
 
-        {!isEditing && thread.tags.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {thread.tags.map((tag) => (
-              <Badge key={tag} variant="outline">
-                {tag}
-              </Badge>
-            ))}
-          </div>
-        ) : null}
-
         {!isEditing ? (
-          <ThreadActions
-            threadId={thread.id}
-            authorId={thread.author_id}
-            currentUserId={currentUserId}
-            initialTotalTokens={
-              typeof thread.total_tokens === "number" ? thread.total_tokens : 0
-            }
-            initialTokenBalance={viewerTokenBalance}
-            initialStarred={viewerHasStarred}
-          />
+          <div className="pt-1">
+            <ThreadActions
+              key={`thread-actions-${thread.id}-${viewerTokenBalance ?? "none"}-${viewerHasStarred ? "1" : "0"}`}
+              threadId={thread.id}
+              authorId={thread.author_id}
+              currentUserId={currentUserId}
+              totalTokens={
+                typeof thread.total_tokens === "number"
+                  ? thread.total_tokens
+                  : 0
+              }
+              tokenBalance={viewerTokenBalance}
+              starred={viewerHasStarred}
+            />
+          </div>
         ) : null}
       </header>
 

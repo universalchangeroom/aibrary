@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { ThreadDetailView } from "@/components/feed/thread-detail-view";
 import { Button } from "@/components/ui/button";
+import { ensureViewerPropsBalance } from "@/lib/props-balance";
 import { createClient } from "@/lib/supabase/server";
 import {
   asChatMessages,
@@ -123,12 +124,10 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
   let viewerHasStarred = false;
 
   if (currentUserId) {
-    const [{ data: profile }, { data: star }] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("token_balance")
-        .eq("id", currentUserId)
-        .maybeSingle(),
+    // Server-only: ensure profile + Honest Start balance, then pass as props.
+    // ThreadActions must not fetch balance on the client (hydration-safe).
+    const [balanceResult, { data: star }] = await Promise.all([
+      ensureViewerPropsBalance(supabase, currentUserId),
       supabase
         .from("starred_threads")
         .select("user_id, thread_id")
@@ -137,14 +136,19 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
         .maybeSingle(),
     ]);
 
-    viewerTokenBalance =
-      typeof profile?.token_balance === "number" ? profile.token_balance : 0;
+    viewerTokenBalance = balanceResult.balance;
+    if ("error" in balanceResult && balanceResult.error) {
+      console.error(
+        "[feed/thread] failed to ensure viewer Props balance:",
+        balanceResult.error
+      );
+    }
     viewerHasStarred = Boolean(star);
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-12">
-      <Button variant="ghost" size="sm" className="-ml-2 w-fit" asChild>
+    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-12">
+      <Button variant="ghost" size="sm" className="-ml-2 -mb-1 w-fit" asChild>
         <Link href="/feed">
           <ArrowLeft className="h-4 w-4" />
           Back to feed
