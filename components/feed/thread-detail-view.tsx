@@ -22,7 +22,7 @@ import {
   type ConversationViewHandle,
 } from "@/components/feed/conversation-view";
 import { FootnoteSheet } from "@/components/feed/footnote-sheet";
-import { ThreadActions } from "@/components/feed/thread-actions";
+import { PropsDisplay } from "@/components/feed/props-display";
 import { FormattedTime } from "@/components/formatted-time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,8 +48,8 @@ interface ThreadDetailViewProps {
   thread: ThreadWithFootnotes;
   isAuthenticated: boolean;
   currentUserId: string | null;
-  viewerTokenBalance: number | null;
-  viewerHasStarred: boolean;
+  /** Optimistic Props total for the emoji row; falls back to thread.total_tokens. */
+  displayedPropsTotal?: number;
 }
 
 type EditLayout = "cards" | "raw";
@@ -153,8 +153,7 @@ export function ThreadDetailView({
   thread: initialThread,
   isAuthenticated,
   currentUserId,
-  viewerTokenBalance,
-  viewerHasStarred,
+  displayedPropsTotal,
 }: ThreadDetailViewProps) {
   const router = useRouter();
   const { user, session } = useAuth();
@@ -619,18 +618,6 @@ export function ThreadDetailView({
           </>
         ) : null}
       </div>
-
-      <ThreadActions
-        key={`thread-actions-${thread.id}-${viewerTokenBalance ?? "none"}-${viewerHasStarred ? "1" : "0"}`}
-        threadId={thread.id}
-        authorId={thread.author_id}
-        currentUserId={currentUserId}
-        totalTokens={
-          typeof thread.total_tokens === "number" ? thread.total_tokens : 0
-        }
-        tokenBalance={viewerTokenBalance}
-        starred={viewerHasStarred}
-      />
     </div>
   ) : null;
 
@@ -713,37 +700,45 @@ export function ThreadDetailView({
 
             {/* Metadata row: badges/tags left, Expand All right */}
             {!isEditing ? (
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                  {thread.source_model ? (
-                    <Badge variant="secondary">{thread.source_model}</Badge>
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                    {thread.source_model ? (
+                      <Badge variant="secondary">{thread.source_model}</Badge>
+                    ) : null}
+                    {thread.created_at ? (
+                      <FormattedTime
+                        date={thread.created_at}
+                        className="text-sm text-muted-foreground"
+                      />
+                    ) : null}
+                    {thread.tags.map((tag) => (
+                      <Badge key={tag} variant="outline">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                  {expandState.canExpand ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => conversationRef.current?.toggleExpandAll()}
+                      aria-pressed={expandState.allExpanded}
+                    >
+                      <ChevronsUpDown className="h-4 w-4" />
+                      {expandState.allExpanded ? "Collapse All" : "Expand All"}
+                    </Button>
                   ) : null}
-                  {thread.created_at ? (
-                    <FormattedTime
-                      date={thread.created_at}
-                      className="text-sm text-muted-foreground"
-                    />
-                  ) : null}
-                  {thread.tags.map((tag) => (
-                    <Badge key={tag} variant="outline">
-                      {tag}
-                    </Badge>
-                  ))}
                 </div>
-                {expandState.canExpand ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => conversationRef.current?.toggleExpandAll()}
-                    aria-pressed={expandState.allExpanded}
-                  >
-                    <ChevronsUpDown className="h-4 w-4" />
-                    {expandState.allExpanded ? "Collapse All" : "Expand All"}
-                  </Button>
-                ) : null}
-              </div>
+
+                <PropsDisplay
+                  total={
+                    displayedPropsTotal ?? thread.total_tokens
+                  }
+                />
+              </>
             ) : null}
 
             {isToolsOpen && toolsPanel ? (

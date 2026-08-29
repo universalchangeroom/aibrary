@@ -1,9 +1,6 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 
-import { ThreadDetailView } from "@/components/feed/thread-detail-view";
-import { Button } from "@/components/ui/button";
+import { ThreadPageClient } from "@/components/feed/thread-page-client";
 import { ensureViewerPropsBalance } from "@/lib/props-balance";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -147,16 +144,8 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-6 py-12">
-      <Button variant="ghost" size="sm" className="-ml-2 w-fit" asChild>
-        <Link href="/feed">
-          <ArrowLeft className="h-4 w-4" />
-          Back to feed
-        </Link>
-      </Button>
-
-      <ThreadDetailView
-        key={thread.id}
+    <main className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-6 py-12">
+      <ThreadPageClient
         thread={thread}
         isAuthenticated={Boolean(user)}
         currentUserId={currentUserId}

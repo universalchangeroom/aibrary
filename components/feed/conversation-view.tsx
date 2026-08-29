@@ -67,10 +67,10 @@ function RoleBadge({ isUser }: { isUser: boolean }) {
 
 function messageShellClass(isUser: boolean) {
   return cn(
-    "rounded-xl border p-4 sm:p-5",
+    "w-full rounded-xl border p-4 sm:p-5",
     isUser
-      ? "ml-0 border-border bg-muted/50 text-foreground sm:mr-12"
-      : "mr-0 border-border bg-card text-card-foreground sm:ml-12"
+      ? "border-border bg-muted/50 text-foreground"
+      : "border-border bg-card text-card-foreground"
   );
 }
 
@@ -243,7 +243,7 @@ export const ConversationView = forwardRef<
   }
 
   return (
-    <section className="flex flex-col gap-5" aria-label="Conversation">
+    <section className="flex w-full flex-col gap-5" aria-label="Conversation">
       {list.length === 0 ? (
         <p className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
           No transcript was saved for this thread.
@@ -296,7 +296,7 @@ export const ConversationView = forwardRef<
             return (
               <details
                 key={`turn-${turn.userIndex}`}
-                className="group flex flex-col gap-5"
+                className="group flex w-full flex-col gap-5"
                 open={openTurnIds.has(turn.userIndex)}
                 onToggle={(event) => {
                   handleTurnToggle(turn.userIndex, event.currentTarget.open);
@@ -325,7 +325,7 @@ export const ConversationView = forwardRef<
                     isEditing={false}
                   />
                 ) : (
-                  <p className="rounded-xl border border-dashed px-4 py-3 text-sm text-muted-foreground sm:ml-12">
+                  <p className="w-full rounded-xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
                     No AI response for this prompt.
                   </p>
                 )}
