@@ -147,8 +147,8 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-12">
-      <Button variant="ghost" size="sm" className="-ml-2 -mb-1 w-fit" asChild>
+    <main className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-6 py-12">
+      <Button variant="ghost" size="sm" className="-ml-2 w-fit" asChild>
         <Link href="/feed">
           <ArrowLeft className="h-4 w-4" />
           Back to feed

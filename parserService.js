@@ -288,11 +288,15 @@ function deepSeekMessageFromRecord(item) {
     if (content) {
       return {
         role,
-        content: `Thinking:\n${reasoning}\n\n${content}`,
+        content: `<think>\n${reasoning}\n</think>\n\n${content}`,
         reasoning,
       };
     }
-    return { role, content: reasoning, reasoning };
+    return {
+      role,
+      content: `<think>\n${reasoning}\n</think>`,
+      reasoning,
+    };
   }
 
   if (!content) return null;
@@ -1104,6 +1108,26 @@ function extractInlineReasoning(body) {
   const text = String(body || "").trim();
   if (!text) return { content: "" };
 
+  // Explicit <think>…</think> from bookmarklet / prior saves.
+  if (/<think>[\s\S]*?<\/think>/i.test(text)) {
+    const thoughts = [];
+    const content = text
+      .replace(/<think>([\s\S]*?)<\/think>/gi, (_full, inner) => {
+        const trimmed = String(inner || "").trim();
+        if (trimmed) thoughts.push(trimmed);
+        return "";
+      })
+      .replace(/^\s+/, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    if (thoughts.length > 0) {
+      return {
+        reasoning: thoughts.join("\n\n"),
+        content,
+      };
+    }
+  }
+
   // Leading "Thought process:" / "Thinking:" block, then the rest is the answer.
   const leading = text.match(
     /^(?:Thought\s+process|Thinking)\s*:\s*([\s\S]+?)(?:\n{2,}|(?=\n(?:Response|Answer|Final\s+answer)\s*:))([\s\S]*)$/i
@@ -1161,7 +1185,9 @@ function buildAssistantMessage(content, reasoning) {
   if (!hasTurnContent(main) && mergedReasoning) {
     return {
       role: "assistant",
-      content: sanitizeMessageContent(mergedReasoning),
+      content: sanitizeMessageContent(
+        `<think>\n${mergedReasoning}\n</think>`
+      ),
       reasoning: mergedReasoning,
     };
   }
@@ -1170,7 +1196,7 @@ function buildAssistantMessage(content, reasoning) {
     return {
       role: "assistant",
       content: sanitizeMessageContent(
-        `Thinking:\n${mergedReasoning}\n\n${main}`
+        `<think>\n${mergedReasoning}\n</think>\n\n${main}`
       ),
       reasoning: mergedReasoning,
     };
@@ -1182,16 +1208,23 @@ function buildAssistantMessage(content, reasoning) {
   };
 }
 
-/** Strip a previously injected Thinking header so we can re-merge cleanly. */
+/** Strip previously injected <think> (or legacy Thinking:) headers for re-merge. */
 function stripThinkingPrefix(content, knownReasoning) {
   const text = String(content || "");
   if (knownReasoning) {
-    const prefix = `Thinking:\n${knownReasoning}\n\n`;
-    if (text.startsWith(prefix)) {
-      return text.slice(prefix.length);
+    const wrapped = `<think>\n${knownReasoning}\n</think>`;
+    if (text.startsWith(wrapped)) {
+      return text.slice(wrapped.length).replace(/^\s+/, "");
+    }
+    const legacy = `Thinking:\n${knownReasoning}\n\n`;
+    if (text.startsWith(legacy)) {
+      return text.slice(legacy.length);
     }
   }
-  return text.replace(/^Thinking:\n[\s\S]*?\n\n/, "");
+  return text
+    .replace(/<think>[\s\S]*?<\/think>\s*/gi, "")
+    .replace(/^Thinking:\n[\s\S]*?\n\n/, "")
+    .replace(/^\s+/, "");
 }
 
 /**

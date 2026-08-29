@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, ImageIcon } from "lucide-react";
+import { Check, ChevronDown, Copy, ImageIcon } from "lucide-react";
 import {
   useState,
   type ComponentPropsWithoutRef,
@@ -13,6 +13,7 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import remarkGfm from "remark-gfm";
 
 import { Button } from "@/components/ui/button";
+import { splitThoughtProcess } from "@/lib/thought-process";
 import { cn } from "@/lib/utils";
 
 type MarkdownRendererProps = {
@@ -211,9 +212,94 @@ function MarkdownImage({ src, alt, title, className, ...rest }: ImgProps) {
   );
 }
 
+const proseClassName = cn(
+  // Conversation preview: tight vertical rhythm (no typography plugin —
+  // prose-p:* equivalents via [&_…] so margins actually apply).
+  "prose max-w-none text-sm leading-snug text-foreground",
+  "prose-p:my-0 prose-p:mb-1 prose-headings:my-1 prose-ul:my-0 prose-li:my-0",
+  "[&_p]:my-0 [&_p]:mb-1 [&_p]:leading-snug",
+  "[&_strong]:font-semibold [&_strong]:text-foreground",
+  "[&_em]:italic",
+  "[&_h1]:my-1 [&_h1]:text-xl [&_h1]:font-semibold [&_h1]:leading-snug",
+  "[&_h2]:my-1 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:leading-snug",
+  "[&_h3]:my-1 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:leading-snug",
+  "[&_ul]:my-0 [&_ul]:list-disc [&_ul]:space-y-0 [&_ul]:pl-5",
+  "[&_ol]:my-0 [&_ol]:list-decimal [&_ol]:space-y-0 [&_ol]:pl-5",
+  "[&_li]:my-0 [&_li]:leading-snug [&_li]:marker:text-muted-foreground",
+  "[&_blockquote]:my-1 [&_blockquote]:rounded-r-md [&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:bg-muted/40 [&_blockquote]:py-0.5 [&_blockquote]:pl-3 [&_blockquote]:pr-2 [&_blockquote]:text-muted-foreground",
+  "[&_a]:font-medium [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2",
+  "[&_a:has(img)]:font-normal [&_a:has(img)]:no-underline",
+  "[&_hr]:my-4 [&_hr]:border-border",
+  "[&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_table]:text-left",
+  "[&_th]:border [&_th]:border-border [&_th]:bg-muted/60 [&_th]:px-2 [&_th]:py-1.5 [&_th]:font-medium",
+  "[&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1.5"
+);
+
+function MarkdownDocument({ content }: { content: string }) {
+  if (!content) return null;
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      urlTransform={(url) => {
+        if (url.startsWith("data:image/")) return url;
+        return defaultUrlTransform(url);
+      }}
+      components={{
+        code: MarkdownCode,
+        // Avoid nested <pre> wrappers around our SyntaxHighlighter frame.
+        pre: ({ children }) => <>{children}</>,
+        img: MarkdownImage,
+        a: ({ href, children, ...rest }) => (
+          <a href={href} target="_blank" rel="noopener noreferrer" {...rest}>
+            {children}
+          </a>
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+}
+
+function ThoughtProcessBlock({ content }: { content: string }) {
+  return (
+    <details
+      open
+      className="group/thought mb-3 rounded-md border border-border/70 bg-muted/30"
+    >
+      <summary
+        className={cn(
+          "flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2",
+          "text-xs font-medium text-muted-foreground",
+          "outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "[&::-webkit-details-marker]:hidden"
+        )}
+      >
+        <span>Thought Process</span>
+        <ChevronDown
+          className="h-3.5 w-3.5 shrink-0 transition-transform duration-200 group-open/thought:rotate-180"
+          aria-hidden
+        />
+      </summary>
+      <div
+        className={cn(
+          proseClassName,
+          "border-t border-border/60 px-3 py-2.5",
+          "border-l-2 border-l-muted-foreground/35 text-[0.8125rem] leading-snug text-muted-foreground",
+          "[&_strong]:text-muted-foreground [&_a]:text-muted-foreground"
+        )}
+      >
+        <MarkdownDocument content={content} />
+      </div>
+    </details>
+  );
+}
+
 /**
  * Renders markdown with GFM (tables, strikethrough, task lists, autolinks)
  * and Prism-highlighted fenced code blocks (vscDarkPlus theme).
+ * Leading <think>…</think> blocks render in a distinct Thought Process panel.
  */
 export function MarkdownRenderer({
   content,
@@ -221,57 +307,12 @@ export function MarkdownRenderer({
 }: MarkdownRendererProps) {
   if (!content) return null;
 
+  const { thought, body } = splitThoughtProcess(content);
+
   return (
-    <div
-      className={cn(
-        // Conversation preview: tight vertical rhythm (no typography plugin —
-        // prose-p:* equivalents via [&_…] so margins actually apply).
-        "prose max-w-none text-sm leading-snug text-foreground",
-        "prose-p:my-0 prose-p:mb-1 prose-headings:my-1 prose-ul:my-0 prose-li:my-0",
-        "[&_p]:my-0 [&_p]:mb-1 [&_p]:leading-snug",
-        "[&_strong]:font-semibold [&_strong]:text-foreground",
-        "[&_em]:italic",
-        "[&_h1]:my-1 [&_h1]:text-xl [&_h1]:font-semibold [&_h1]:leading-snug",
-        "[&_h2]:my-1 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:leading-snug",
-        "[&_h3]:my-1 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:leading-snug",
-        "[&_ul]:my-0 [&_ul]:list-disc [&_ul]:space-y-0 [&_ul]:pl-5",
-        "[&_ol]:my-0 [&_ol]:list-decimal [&_ol]:space-y-0 [&_ol]:pl-5",
-        "[&_li]:my-0 [&_li]:leading-snug [&_li]:marker:text-muted-foreground",
-        "[&_blockquote]:my-1 [&_blockquote]:rounded-r-md [&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:bg-muted/40 [&_blockquote]:py-0.5 [&_blockquote]:pl-3 [&_blockquote]:pr-2 [&_blockquote]:text-muted-foreground",
-        "[&_a]:font-medium [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2",
-        "[&_a:has(img)]:font-normal [&_a:has(img)]:no-underline",
-        "[&_hr]:my-4 [&_hr]:border-border",
-        "[&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_table]:text-left",
-        "[&_th]:border [&_th]:border-border [&_th]:bg-muted/60 [&_th]:px-2 [&_th]:py-1.5 [&_th]:font-medium",
-        "[&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1.5",
-        className
-      )}
-    >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        urlTransform={(url) => {
-          if (url.startsWith("data:image/")) return url;
-          return defaultUrlTransform(url);
-        }}
-        components={{
-          code: MarkdownCode,
-          // Avoid nested <pre> wrappers around our SyntaxHighlighter frame.
-          pre: ({ children }) => <>{children}</>,
-          img: MarkdownImage,
-          a: ({ href, children, ...rest }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              {...rest}
-            >
-              {children}
-            </a>
-          ),
-        }}
-      >
-        {content}
-      </ReactMarkdown>
+    <div className={cn(proseClassName, className)}>
+      {thought ? <ThoughtProcessBlock content={thought} /> : null}
+      {body ? <MarkdownDocument content={body} /> : null}
     </div>
   );
 }

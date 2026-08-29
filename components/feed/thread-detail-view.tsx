@@ -2,19 +2,25 @@
 
 import {
   Check,
+  ChevronsUpDown,
   ClipboardCopy,
   Copy,
   Download,
   Loader2,
   MessageSquareWarning,
+  MoreHorizontal,
   Pencil,
   Trash2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AddFootnoteDialog } from "@/components/feed/add-footnote-dialog";
-import { ConversationView } from "@/components/feed/conversation-view";
+import {
+  ConversationView,
+  type ConversationExpandState,
+  type ConversationViewHandle,
+} from "@/components/feed/conversation-view";
 import { FootnoteSheet } from "@/components/feed/footnote-sheet";
 import { ThreadActions } from "@/components/feed/thread-actions";
 import { FormattedTime } from "@/components/formatted-time";
@@ -174,6 +180,39 @@ export function ThreadDetailView({
   const [editRaw, setEditRaw] = useState(() =>
     messagesToRawTranscript(initialThread.content, initialThread.source_model)
   );
+  const rawTranscriptRef = useRef<HTMLTextAreaElement>(null);
+  const conversationRef = useRef<ConversationViewHandle>(null);
+  const [isToolsOpen, setIsToolsOpen] = useState(false);
+  const [expandState, setExpandState] = useState<ConversationExpandState>({
+    canExpand: false,
+    allExpanded: true,
+  });
+
+  const handleExpandStateChange = useCallback(
+    (state: ConversationExpandState) => {
+      setExpandState(state);
+    },
+    []
+  );
+
+  function insertSpeakerTag(tag: "USER:\n" | "AI:\n") {
+    const el = rawTranscriptRef.current;
+    const value = editRaw;
+    const start = el?.selectionStart ?? value.length;
+    const end = el?.selectionEnd ?? value.length;
+    const next = value.slice(0, start) + tag + value.slice(end);
+    const cursor = start + tag.length;
+
+    setEditRaw(next);
+    if (saveError) setSaveError(null);
+
+    window.setTimeout(() => {
+      const textarea = rawTranscriptRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(cursor, cursor);
+    }, 0);
+  }
 
   const ownerId = thread.author_id;
   const isOwner = Boolean(user?.id && ownerId && user.id === ownerId);
@@ -506,6 +545,95 @@ export function ThreadDetailView({
     </div>
   );
 
+  const toolsPanel = !isEditing ? (
+    <div className="space-y-4" aria-label="Thread tools">
+      <div
+        className="flex flex-wrap items-center gap-2"
+        role="toolbar"
+        aria-label="Thread utilities"
+      >
+        {isAuthenticated ? (
+          <AddFootnoteDialog threadId={thread.id} />
+        ) : null}
+        {footnoteCount > 0 ? (
+          <FootnoteSheet
+            footnotes={thread.footnotes}
+            threadId={thread.id}
+            trigger="header"
+          />
+        ) : null}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void copyThreadAsMarkdown()}
+        >
+          {markdownCopied ? (
+            <Check className="h-4 w-4" />
+          ) : (
+            <ClipboardCopy className="h-4 w-4" />
+          )}
+          {markdownCopied ? "Copied!" : "Copy as Markdown"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={downloadThreadMarkdown}
+        >
+          <Download className="h-4 w-4" />
+          Download .md
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={copySystemPrompt}
+        >
+          {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+          {copied ? "Copied" : "Copy System Prompt"}
+        </Button>
+        {isOwner ? (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={enterEditMode}
+            >
+              <Pencil className="h-4 w-4" />
+              Edit Thread
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                setDeleteError(null);
+                setDeleteOpen(true);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete Thread
+            </Button>
+          </>
+        ) : null}
+      </div>
+
+      <ThreadActions
+        key={`thread-actions-${thread.id}-${viewerTokenBalance ?? "none"}-${viewerHasStarred ? "1" : "0"}`}
+        threadId={thread.id}
+        authorId={thread.author_id}
+        currentUserId={currentUserId}
+        totalTokens={
+          typeof thread.total_tokens === "number" ? thread.total_tokens : 0
+        }
+        tokenBalance={viewerTokenBalance}
+        starred={viewerHasStarred}
+      />
+    </div>
+  ) : null;
+
   return (
     <div className="flex flex-col gap-8">
       {showSuccessToast ? (
@@ -527,253 +655,234 @@ export function ThreadDetailView({
         </div>
       ) : null}
 
-      <header className="space-y-5 border-b pb-8">
-        {/* Title — full width, never competes with action buttons */}
-        <div className="min-w-0 space-y-2">
-          {isEditing ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                type="text"
-                value={editTitle}
-                onChange={(event) => {
-                  setEditTitle(event.target.value);
-                  if (saveError) setSaveError(null);
-                }}
-                aria-label="Thread title"
-                disabled={isSaving}
-                className="h-auto w-full border-primary/40 px-3 py-2 text-2xl font-bold tracking-tight shadow-none sm:text-3xl"
-              />
-              <Badge
-                variant="outline"
-                className="border-primary/40 text-primary"
-              >
-                Editing
-              </Badge>
-            </div>
-          ) : (
-            <h1 className="flex min-w-0 items-start gap-2 text-2xl font-bold tracking-tight break-words sm:text-3xl">
-              <span className="min-w-0 flex-1">{thread.title}</span>
-              {footnoteCount > 0 ? (
-                <span className="mt-1 shrink-0 text-amber-600" aria-hidden>
-                  <MessageSquareWarning className="h-5 w-5" />
-                </span>
+      <div className="flex flex-col gap-6">
+        <div className="flex min-w-0 flex-col gap-6">
+          <header className="space-y-5 pb-2">
+            {/* Title row: title left, tools toggle right */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1 space-y-2">
+                {isEditing ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      type="text"
+                      value={editTitle}
+                      onChange={(event) => {
+                        setEditTitle(event.target.value);
+                        if (saveError) setSaveError(null);
+                      }}
+                      aria-label="Thread title"
+                      disabled={isSaving}
+                      className="h-auto w-full border-primary/40 px-3 py-2 text-2xl font-bold tracking-tight shadow-none sm:text-3xl"
+                    />
+                    <Badge
+                      variant="outline"
+                      className="border-primary/40 text-primary"
+                    >
+                      Editing
+                    </Badge>
+                  </div>
+                ) : (
+                  <h1 className="flex min-w-0 items-start gap-2 text-2xl font-bold tracking-tight break-words sm:text-3xl">
+                    <span className="min-w-0 flex-1">{thread.title}</span>
+                    {footnoteCount > 0 ? (
+                      <span
+                        className="mt-1 shrink-0 text-amber-600"
+                        aria-hidden
+                      >
+                        <MessageSquareWarning className="h-5 w-5" />
+                      </span>
+                    ) : null}
+                  </h1>
+                )}
+              </div>
+              {!isEditing ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-1 h-8 w-8 shrink-0 p-0 text-muted-foreground"
+                  aria-label={isToolsOpen ? "Hide tools" : "Show tools"}
+                  aria-expanded={isToolsOpen}
+                  aria-controls="thread-tools-panel"
+                  onClick={() => setIsToolsOpen((open) => !open)}
+                >
+                  <MoreHorizontal className="h-5 w-5" />
+                </Button>
               ) : null}
-            </h1>
-          )}
-        </div>
+            </div>
 
-        {/* Metadata: model, date, tags */}
-        {!isEditing ? (
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              {thread.source_model ? (
-                <Badge variant="secondary">{thread.source_model}</Badge>
-              ) : null}
-              {thread.created_at ? (
-                <FormattedTime
-                  date={thread.created_at}
-                  className="text-sm text-muted-foreground"
-                />
-              ) : null}
-            </div>
-            {thread.tags.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {thread.tags.map((tag) => (
-                  <Badge key={tag} variant="outline">
-                    {tag}
-                  </Badge>
-                ))}
+            {/* Metadata row: badges/tags left, Expand All right */}
+            {!isEditing ? (
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                  {thread.source_model ? (
+                    <Badge variant="secondary">{thread.source_model}</Badge>
+                  ) : null}
+                  {thread.created_at ? (
+                    <FormattedTime
+                      date={thread.created_at}
+                      className="text-sm text-muted-foreground"
+                    />
+                  ) : null}
+                  {thread.tags.map((tag) => (
+                    <Badge key={tag} variant="outline">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+                {expandState.canExpand ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => conversationRef.current?.toggleExpandAll()}
+                    aria-pressed={expandState.allExpanded}
+                  >
+                    <ChevronsUpDown className="h-4 w-4" />
+                    {expandState.allExpanded ? "Collapse All" : "Expand All"}
+                  </Button>
+                ) : null}
               </div>
             ) : null}
-          </div>
-        ) : null}
 
-        {/* Utility actions — own row beneath metadata; wraps on narrow viewports */}
-        <div
-          className="flex flex-wrap items-center gap-2"
-          role="toolbar"
-          aria-label="Thread utilities"
-        >
-          {isAuthenticated && !isEditing ? (
-            <AddFootnoteDialog threadId={thread.id} />
-          ) : null}
-          {footnoteCount > 0 && !isEditing ? (
-            <FootnoteSheet
-              footnotes={thread.footnotes}
-              threadId={thread.id}
-              trigger="header"
-            />
-          ) : null}
-          {!isEditing ? (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void copyThreadAsMarkdown()}
-              >
-                {markdownCopied ? (
-                  <Check className="h-4 w-4" />
-                ) : (
-                  <ClipboardCopy className="h-4 w-4" />
-                )}
-                {markdownCopied ? "Copied!" : "Copy as Markdown"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={downloadThreadMarkdown}
-              >
-                <Download className="h-4 w-4" />
-                Download .md
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={copySystemPrompt}
-              >
-                {copied ? (
-                  <Check className="h-4 w-4" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-                {copied ? "Copied" : "Copy System Prompt"}
-              </Button>
-            </>
-          ) : null}
-          {isOwner && !isEditing ? (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={enterEditMode}
-              >
-                <Pencil className="h-4 w-4" />
-                Edit Thread
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={() => {
-                  setDeleteError(null);
-                  setDeleteOpen(true);
-                }}
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete Thread
-              </Button>
-            </>
-          ) : null}
-          {isEditing ? editActions : null}
-        </div>
+            {isToolsOpen && toolsPanel ? (
+              <div id="thread-tools-panel">{toolsPanel}</div>
+            ) : null}
 
-        {isEditing && saveError ? (
-          <p
-            role="alert"
-            className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
-          >
-            {saveError}
-          </p>
-        ) : null}
+            {isEditing ? (
+              <div
+                className="flex flex-wrap items-center gap-2"
+                role="toolbar"
+                aria-label="Edit actions"
+              >
+                {editActions}
+              </div>
+            ) : null}
 
-        {isEditing ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void switchEditLayout()}
-              disabled={busy}
-            >
-              {isSwitchingLayout ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              ) : null}
-              {editLayout === "cards"
-                ? "Switch to Raw Text Editor"
-                : "Switch to Card Editor"}
-            </Button>
-            {editLayout === "raw" ? (
-              <p className="text-xs text-muted-foreground">
-                Use{" "}
-                <span className="font-medium">
-                  {assistantSpeakerLabel(thread.source_model)}:
-                </span>{" "}
-                (or ChatGPT:/Claude:/Gemini:/DeepSeek:/Assistant:) and{" "}
-                <span className="font-medium">User:</span> labels for each turn.
+            {isEditing && saveError ? (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              >
+                {saveError}
               </p>
             ) : null}
-          </div>
-        ) : null}
 
-        {!isEditing ? (
-          <div className="pt-1">
-            <ThreadActions
-              key={`thread-actions-${thread.id}-${viewerTokenBalance ?? "none"}-${viewerHasStarred ? "1" : "0"}`}
-              threadId={thread.id}
-              authorId={thread.author_id}
-              currentUserId={currentUserId}
-              totalTokens={
-                typeof thread.total_tokens === "number"
-                  ? thread.total_tokens
-                  : 0
-              }
-              tokenBalance={viewerTokenBalance}
-              starred={viewerHasStarred}
-            />
-          </div>
-        ) : null}
-      </header>
+            {isEditing ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void switchEditLayout()}
+                  disabled={busy}
+                >
+                  {isSwitchingLayout ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  ) : null}
+                  {editLayout === "cards"
+                    ? "Switch to Raw Text Editor"
+                    : "Switch to Card Editor"}
+                </Button>
+                {editLayout === "raw" ? (
+                  <p className="text-xs text-muted-foreground">
+                    Use{" "}
+                    <span className="font-medium">
+                      {assistantSpeakerLabel(thread.source_model)}:
+                    </span>{" "}
+                    (or ChatGPT:/Claude:/Gemini:/DeepSeek:/Assistant:) and{" "}
+                    <span className="font-medium">User:</span> labels for each
+                    turn.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </header>
 
-      {isEditing && editLayout === "raw" ? (
-        <section className="flex flex-col gap-2" aria-label="Raw transcript editor">
-          <label
-            htmlFor="raw-transcript"
-            className="text-sm font-medium text-foreground"
-          >
-            Raw Transcript
-          </label>
-          <Textarea
-            id="raw-transcript"
-            value={editRaw}
-            onChange={(event) => {
-              setEditRaw(event.target.value);
-              if (saveError) setSaveError(null);
-            }}
-            disabled={busy}
-            aria-label="Raw transcript"
-            className="min-h-[min(70vh,40rem)] resize-y font-mono text-sm leading-relaxed"
-            placeholder={`User: …\n\n${assistantSpeakerLabel(thread.source_model)}: …`}
-          />
-        </section>
-      ) : (
-        <ConversationView
-          messages={isEditing ? editMessages : thread.content}
-          footnotes={isEditing ? [] : thread.footnotes}
-          threadId={thread.id}
-          isEditing={isEditing && editLayout === "cards"}
-          onMessageContentChange={updateMessageContent}
-          onRemoveMessage={removeMessage}
-          onAddMessage={addMessage}
-        />
-      )}
-
-      {isEditing ? (
-        <div className="flex flex-col gap-3 border-t pt-6">
-          {saveError ? (
-            <p
-              role="alert"
-              className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          {isEditing && editLayout === "raw" ? (
+            <section
+              className="flex flex-col gap-2"
+              aria-label="Raw transcript editor"
             >
-              {saveError}
-            </p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label
+                  htmlFor="raw-transcript"
+                  className="text-sm font-medium text-foreground"
+                >
+                  Raw Transcript
+                </label>
+                <div
+                  className="flex items-center gap-0.5"
+                  role="toolbar"
+                  aria-label="Insert speaker tags"
+                >
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => insertSpeakerTag("USER:\n")}
+                    className="h-8 px-2 text-xs font-medium text-muted-foreground"
+                  >
+                    User:
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => insertSpeakerTag("AI:\n")}
+                    className="h-8 px-2 text-xs font-medium text-muted-foreground"
+                  >
+                    AI:
+                  </Button>
+                </div>
+              </div>
+              <Textarea
+                id="raw-transcript"
+                ref={rawTranscriptRef}
+                value={editRaw}
+                onChange={(event) => {
+                  setEditRaw(event.target.value);
+                  if (saveError) setSaveError(null);
+                }}
+                disabled={busy}
+                aria-label="Raw transcript"
+                className="min-h-[min(70vh,40rem)] resize-y font-mono text-sm leading-relaxed"
+                placeholder={`User: …\n\n${assistantSpeakerLabel(thread.source_model)}: …`}
+              />
+            </section>
+          ) : (
+            <ConversationView
+              ref={conversationRef}
+              messages={isEditing ? editMessages : thread.content}
+              footnotes={isEditing ? [] : thread.footnotes}
+              threadId={thread.id}
+              isEditing={isEditing && editLayout === "cards"}
+              hideExpandControls
+              onExpandStateChange={handleExpandStateChange}
+              onMessageContentChange={updateMessageContent}
+              onRemoveMessage={removeMessage}
+              onAddMessage={addMessage}
+            />
+          )}
+
+          {isEditing ? (
+            <div className="flex flex-col gap-3 border-t pt-6">
+              {saveError ? (
+                <p
+                  role="alert"
+                  className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+                >
+                  {saveError}
+                </p>
+              ) : null}
+              {editActions}
+            </div>
           ) : null}
-          {editActions}
         </div>
-      ) : null}
+      </div>
 
       <Dialog
         open={deleteOpen}

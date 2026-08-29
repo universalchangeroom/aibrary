@@ -346,6 +346,33 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
           disabled={!editable}
           onClick={() => editor.chain().focus().toggleCodeBlock().run()}
         />
+        <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={!editable}
+          onClick={() =>
+            editor.chain().focus().insertContent("USER:\n").run()
+          }
+          aria-label="Insert User tag"
+          title="Insert User:"
+          className="h-8 px-2 text-xs font-medium text-muted-foreground"
+        >
+          User:
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={!editable}
+          onClick={() => editor.chain().focus().insertContent("AI:\n").run()}
+          aria-label="Insert AI tag"
+          title="Insert AI:"
+          className="h-8 px-2 text-xs font-medium text-muted-foreground"
+        >
+          AI:
+        </Button>
       </div>
 
       <EditorContent editor={editor} />

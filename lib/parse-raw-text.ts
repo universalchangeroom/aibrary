@@ -3,6 +3,11 @@
  * Strips date/time headers that copy/pastes often include at the top of chats.
  */
 
+import {
+  stripThoughtProcess,
+  wrapThoughtProcess,
+} from "@/lib/thought-process";
+
 export type ParsedRawMessage = {
   role: "user" | "assistant";
   content: string;
@@ -123,6 +128,26 @@ function extractInlineReasoning(body: string): {
   const text = String(body || "").trim();
   if (!text) return { content: "" };
 
+  // Explicit <think>…</think> from bookmarklet / prior saves.
+  if (/<think>[\s\S]*?<\/think>/i.test(text)) {
+    const thoughts: string[] = [];
+    const content = text
+      .replace(/<think>([\s\S]*?)<\/think>/gi, (_full, inner: string) => {
+        const trimmed = String(inner ?? "").trim();
+        if (trimmed) thoughts.push(trimmed);
+        return "";
+      })
+      .replace(/^\s+/, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    if (thoughts.length > 0) {
+      return {
+        reasoning: thoughts.join("\n\n"),
+        content,
+      };
+    }
+  }
+
   const leading = text.match(
     /^(?:Thought\s+process|Thinking)\s*:\s*([\s\S]+?)(?:\n{2,}|(?=\n(?:Response|Answer|Final\s+answer)\s*:))([\s\S]*)$/i
   );
@@ -171,7 +196,7 @@ function buildAssistantMessage(
   if (!hasTurnContent(main) && mergedReasoning) {
     return {
       role: "assistant",
-      content: sanitizeMessageContent(mergedReasoning),
+      content: sanitizeMessageContent(wrapThoughtProcess(mergedReasoning, "")),
       reasoning: mergedReasoning,
     };
   }
@@ -180,7 +205,7 @@ function buildAssistantMessage(
     return {
       role: "assistant",
       content: sanitizeMessageContent(
-        `Thinking:\n${mergedReasoning}\n\n${main}`
+        wrapThoughtProcess(mergedReasoning, main)
       ),
       reasoning: mergedReasoning,
     };
@@ -195,10 +220,12 @@ function stripThinkingPrefix(
 ): string {
   const text = String(content || "");
   if (knownReasoning) {
-    const prefix = `Thinking:\n${knownReasoning}\n\n`;
-    if (text.startsWith(prefix)) return text.slice(prefix.length);
+    const wrapped = wrapThoughtProcess(knownReasoning, "");
+    if (text.startsWith(wrapped)) {
+      return text.slice(wrapped.length).replace(/^\s+/, "");
+    }
   }
-  return text.replace(/^Thinking:\n[\s\S]*?\n\n/, "");
+  return stripThoughtProcess(text);
 }
 
 /**

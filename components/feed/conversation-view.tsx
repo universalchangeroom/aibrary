@@ -1,6 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useState,
+} from "react";
 import { ChevronDown, ChevronsUpDown, Plus, Trash2 } from "lucide-react";
 
 import { MarkdownRenderer } from "@/components/markdown-renderer";
@@ -8,6 +13,15 @@ import { RichTextEditor } from "@/components/rich-text-editor";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ChatMessage, FootnoteWithVotes } from "@/lib/types";
+
+export type ConversationExpandState = {
+  canExpand: boolean;
+  allExpanded: boolean;
+};
+
+export type ConversationViewHandle = {
+  toggleExpandAll: () => void;
+};
 
 interface ConversationViewProps {
   messages: ChatMessage[];
@@ -17,6 +31,9 @@ interface ConversationViewProps {
   onMessageContentChange?: (index: number, content: string) => void;
   onRemoveMessage?: (index: number) => void;
   onAddMessage?: () => void;
+  /** When true, Expand/Collapse All is not rendered inside the conversation. */
+  hideExpandControls?: boolean;
+  onExpandStateChange?: (state: ConversationExpandState) => void;
 }
 
 type ViewTurn =
@@ -141,15 +158,39 @@ function MessageBody({
   );
 }
 
-export function ConversationView({
-  messages = [],
-  footnotes: _footnotes = [],
-  threadId: _threadId,
-  isEditing = false,
-  onMessageContentChange,
-  onRemoveMessage,
-  onAddMessage,
-}: ConversationViewProps) {
+function initialOpenTurnIds(
+  messages: ChatMessage[],
+  isEditing: boolean
+): Set<number> {
+  if (isEditing) return new Set();
+  const list = messages.filter((message) => message.role !== "system");
+  return new Set(
+    buildViewTurns(list)
+      .filter(
+        (turn): turn is Extract<ViewTurn, { kind: "pair" }> =>
+          turn.kind === "pair"
+      )
+      .map((turn) => turn.userIndex)
+  );
+}
+
+export const ConversationView = forwardRef<
+  ConversationViewHandle,
+  ConversationViewProps
+>(function ConversationView(
+  {
+    messages = [],
+    footnotes: _footnotes = [],
+    threadId: _threadId,
+    isEditing = false,
+    onMessageContentChange,
+    onRemoveMessage,
+    onAddMessage,
+    hideExpandControls = false,
+    onExpandStateChange,
+  },
+  ref
+) {
   const list = isEditing
     ? messages
     : messages.filter((message) => message.role !== "system");
@@ -162,15 +203,33 @@ export function ConversationView({
     )
     .map((turn) => turn.userIndex);
 
-  const [openTurnIds, setOpenTurnIds] = useState<Set<number>>(() => new Set());
+  // Default: every User/AI pair starts expanded (`open` on each <details>).
+  const [openTurnIds, setOpenTurnIds] = useState<Set<number>>(() =>
+    initialOpenTurnIds(messages, isEditing)
+  );
 
+  const canExpand = !isEditing && pairTurnIds.length > 0;
   const allExpanded =
-    pairTurnIds.length > 0 &&
-    pairTurnIds.every((id) => openTurnIds.has(id));
+    canExpand && pairTurnIds.every((id) => openTurnIds.has(id));
 
   function toggleExpandAll() {
+    if (!canExpand) return;
     setOpenTurnIds(allExpanded ? new Set() : new Set(pairTurnIds));
   }
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      toggleExpandAll,
+    }),
+    // toggleExpandAll closes over current expand state / pair ids
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allExpanded, canExpand, pairTurnIds.join("|")]
+  );
+
+  useEffect(() => {
+    onExpandStateChange?.({ canExpand, allExpanded });
+  }, [canExpand, allExpanded, onExpandStateChange]);
 
   function handleTurnToggle(userIndex: number, isOpen: boolean) {
     setOpenTurnIds((prev) => {
@@ -191,7 +250,7 @@ export function ConversationView({
         </p>
       ) : null}
 
-      {!isEditing && pairTurnIds.length > 0 ? (
+      {!hideExpandControls && canExpand ? (
         <div className="flex justify-end">
           <Button
             type="button"
@@ -290,4 +349,4 @@ export function ConversationView({
       ) : null}
     </section>
   );
-}
+});
