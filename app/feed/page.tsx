@@ -8,6 +8,8 @@ import {
 } from "@/lib/types";
 import { emptyVoteSummary, summarizeVotes, type VoteRow } from "@/lib/votes";
 
+export const dynamic = "force-dynamic";
+
 export default async function FeedPage() {
   const supabase = await createClient();
 
@@ -16,9 +18,12 @@ export default async function FeedPage() {
   } = await supabase.auth.getUser();
 
   // Discover feed: only fully published public threads (pending_review is hidden).
+  // Explicit total_tokens so Props on cards stay in sync after giveProps.
   const { data, error } = await supabase
     .from("threads")
-    .select("*, footnotes(id)")
+    .select(
+      "id, author_id, title, content, source_model, tags, is_public, status, total_tokens, created_at, updated_at, footnotes(id)"
+    )
     .eq("is_public", true)
     .eq("status", "published")
     .order("created_at", { ascending: false });
@@ -56,6 +61,8 @@ export default async function FeedPage() {
     return [
       {
         ...row,
+        total_tokens:
+          typeof row.total_tokens === "number" ? row.total_tokens : 0,
         content: asChatMessages(
           threadContentFromRow(row as Record<string, unknown>)
         ),
@@ -72,15 +79,19 @@ export default async function FeedPage() {
   });
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-16">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Discover</h1>
-        <p className="text-muted-foreground">
-          Browse shared AI conversations from the ChatShare community.
-        </p>
-      </header>
+    <div className="min-h-[calc(100vh-3.5rem)] bg-gradient-to-br from-orange-50 via-amber-50 to-rose-50 text-stone-800">
+      <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-16">
+        <header className="space-y-2 rounded-xl bg-gradient-to-r from-amber-500/10 via-orange-400/10 to-transparent px-4 py-6">
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900">
+            Discover
+          </h1>
+          <p className="text-stone-600">
+            Browse shared AI conversations from the ChatShare community.
+          </p>
+        </header>
 
-      <ThreadList threads={threadList ?? []} />
-    </main>
+        <ThreadList threads={threadList ?? []} variant="discover" />
+      </main>
+    </div>
   );
 }

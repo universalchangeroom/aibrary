@@ -47,10 +47,17 @@ export function BookmarkletCard({ className }: BookmarkletCardProps) {
         href={bookmarkletScript}
         draggable
         onClick={(e) => e.preventDefault()}
-        className="inline-block cursor-grab rounded-md bg-indigo-600 px-4 py-2 font-medium text-white shadow hover:bg-indigo-700 active:cursor-grabbing"
+        className="inline-flex items-center cursor-grab rounded-md bg-zinc-900 px-4 py-2 font-medium text-white shadow hover:bg-black active:cursor-grabbing"
         title="Drag to your bookmarks bar"
       >
-        + Import to ChatShare
+        <img
+          src="/dandelion-icon.png"
+          alt=""
+          width={20}
+          height={20}
+          className="mr-2 h-5 w-5 rounded-md bg-black object-contain shadow-sm"
+        />
+        CS importer
       </a>
 
       <p className="text-xs text-muted-foreground">

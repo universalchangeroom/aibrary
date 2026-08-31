@@ -8,7 +8,6 @@ import {
   Loader2,
   LogOut,
   NotebookText,
-  Share2,
   Shield,
   Star,
   Settings,
@@ -27,7 +26,13 @@ function userInitials(email: string | undefined): string {
   return local.slice(0, 2).toUpperCase();
 }
 
-export function AuthNav() {
+export function AuthNav({
+  tokenBalance = null,
+  className,
+}: {
+  tokenBalance?: number | null;
+  className?: string;
+}) {
   const router = useRouter();
   const { user, isLoading } = useAuth();
   const [authOpen, setAuthOpen] = useState(false);
@@ -72,16 +77,18 @@ export function AuthNav() {
 
   if (isLoading) {
     return (
-      <Button size="sm" variant="outline" disabled>
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading
-      </Button>
+      <div className={cn("flex items-center gap-4", className)}>
+        <Button size="sm" variant="outline" disabled>
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading
+        </Button>
+      </div>
     );
   }
 
   if (!user) {
     return (
-      <>
+      <div className={cn("flex items-center gap-4", className)}>
         <Button
           type="button"
           size="sm"
@@ -91,20 +98,23 @@ export function AuthNav() {
           Sign In
         </Button>
         <AuthModal open={authOpen} onOpenChange={setAuthOpen} />
-      </>
+      </div>
     );
   }
 
   const email = user.email ?? "Account";
+  const showPropsBalance = typeof tokenBalance === "number";
 
   return (
-    <div className="flex items-center gap-2">
-      <Button asChild size="sm">
-        <Link href="/share">
-          <Share2 className="h-4 w-4" />
-          Share a Chat
-        </Link>
-      </Button>
+    <div className={cn("flex items-center gap-4", className)}>
+      {showPropsBalance ? (
+        <span
+          className="inline-flex items-center rounded-md border bg-muted/40 px-2.5 py-1.5 text-xs font-medium tabular-nums text-muted-foreground"
+          aria-label={`${tokenBalance} Props`}
+        >
+          {tokenBalance} 🎉
+        </span>
+      ) : null}
 
       <div className="relative" ref={menuRef}>
         <Button

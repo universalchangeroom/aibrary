@@ -5,6 +5,7 @@ import { Check, Copy, MessageSquareWarning, Pencil } from "lucide-react";
 
 import { AddFootnoteDialog } from "@/components/feed/add-footnote-dialog";
 import { FootnoteSheet } from "@/components/feed/footnote-sheet";
+import { SourceModelBadge } from "@/components/feed/source-model-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,7 +80,7 @@ export function ThreadHeader({
             ) : null}
           </div>
           {thread.source_model ? (
-            <Badge variant="secondary">{thread.source_model}</Badge>
+            <SourceModelBadge sourceModel={thread.source_model} />
           ) : null}
         </div>
 

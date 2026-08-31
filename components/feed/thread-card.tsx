@@ -10,10 +10,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { FormattedTime } from "@/components/formatted-time";
+import { PropsDisplay } from "@/components/feed/props-display";
+import { SourceModelBadge } from "@/components/feed/source-model-badge";
+import { cn } from "@/lib/utils";
 import type { ChatMessage, ThreadWithFootnotes } from "@/lib/types";
 
 interface ThreadCardProps {
   thread: ThreadWithFootnotes;
+  variant?: "default" | "discover";
 }
 
 function conversationPreview(messages: ChatMessage[] | null | undefined): string {
@@ -28,10 +32,11 @@ function conversationPreview(messages: ChatMessage[] | null | undefined): string
   return list.map((m) => m.content).join(" — ");
 }
 
-export function ThreadCard({ thread }: ThreadCardProps) {
+export function ThreadCard({ thread, variant = "default" }: ThreadCardProps) {
   const preview = conversationPreview(thread.content);
   const tags = thread.tags ?? [];
   const hasFootnotes = (thread.footnotes ?? []).length > 0;
+  const isDiscover = variant === "discover";
 
   return (
     <div className="rounded-xl focus-within:ring-2 focus-within:ring-ring">
@@ -39,7 +44,14 @@ export function ThreadCard({ thread }: ThreadCardProps) {
         href={`/feed/${thread.id}`}
         className="min-w-0 flex-1 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Card className="transition-colors hover:bg-muted/40">
+        <Card
+          className={cn(
+            "transition-colors",
+            isDiscover
+              ? "border border-orange-200 bg-white/80 text-stone-800 shadow-sm backdrop-blur-sm hover:bg-white/90"
+              : "hover:bg-muted/40"
+          )}
+        >
           <CardHeader className="space-y-3">
             <div className="flex items-start justify-between gap-3">
               <CardTitle className="text-lg leading-snug">
@@ -57,18 +69,25 @@ export function ThreadCard({ thread }: ThreadCardProps) {
                 </span>
               </CardTitle>
               {thread.source_model ? (
-                <Badge variant="secondary" className="shrink-0">
-                  {thread.source_model}
-                </Badge>
+                <SourceModelBadge
+                  sourceModel={thread.source_model}
+                  className="shrink-0"
+                />
               ) : null}
             </div>
 
-            <p className="text-sm font-semibold text-primary">
-              Props:{" "}
-              <span className="text-base">
-                {typeof thread.total_tokens === "number" ? thread.total_tokens : 0}
-              </span>
-            </p>
+            {isDiscover ? (
+              <PropsDisplay total={thread.total_tokens} variant="card" />
+            ) : (
+              <p className="text-sm font-semibold text-primary">
+                Props:{" "}
+                <span className="text-base">
+                  {typeof thread.total_tokens === "number"
+                    ? thread.total_tokens
+                    : 0}
+                </span>
+              </p>
+            )}
 
             <div className="flex flex-wrap gap-2">
               {tags.map((tag) => (
@@ -80,13 +99,21 @@ export function ThreadCard({ thread }: ThreadCardProps) {
             {thread.created_at ? (
               <FormattedTime
                 date={thread.created_at}
-                className="text-xs text-muted-foreground"
+                className={cn(
+                  "text-xs",
+                  isDiscover ? "text-stone-600" : "text-muted-foreground"
+                )}
               />
             ) : null}
           </CardHeader>
 
           <CardContent>
-            <CardDescription className="line-clamp-2 text-sm leading-relaxed">
+            <CardDescription
+              className={cn(
+                "line-clamp-2 text-sm leading-relaxed",
+                isDiscover && "text-stone-600"
+              )}
+            >
               {preview || "No conversation preview available."}
             </CardDescription>
           </CardContent>

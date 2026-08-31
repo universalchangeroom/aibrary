@@ -23,6 +23,7 @@ import {
 } from "@/components/feed/conversation-view";
 import { FootnoteSheet } from "@/components/feed/footnote-sheet";
 import { PropsDisplay } from "@/components/feed/props-display";
+import { SourceModelBadge } from "@/components/feed/source-model-badge";
 import { FormattedTime } from "@/components/formatted-time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -704,7 +705,7 @@ export function ThreadDetailView({
                 <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                     {thread.source_model ? (
-                      <Badge variant="secondary">{thread.source_model}</Badge>
+                      <SourceModelBadge sourceModel={thread.source_model} />
                     ) : null}
                     {thread.created_at ? (
                       <FormattedTime

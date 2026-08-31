@@ -35,7 +35,7 @@ const propsButtonClassName =
   "bg-red-600 text-white shadow-sm hover:bg-red-700 focus-visible:ring-red-600";
 
 const confirmButtonClassName =
-  "w-fit bg-black text-white shadow-sm hover:bg-gray-800 focus-visible:ring-black disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500 dark:bg-white dark:text-black dark:hover:bg-gray-200 dark:focus-visible:ring-white dark:disabled:bg-gray-700 dark:disabled:text-gray-500";
+  "w-fit border-transparent bg-red-800 text-white shadow-sm hover:bg-red-900 focus-visible:ring-red-800 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:bg-gray-700 dark:disabled:text-gray-500";
 
 /**
  * Compact thread actions for the thread page header (star + give Props).
@@ -173,12 +173,15 @@ export function ThreadActions({
                 Giv&apos;m Props!
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-[420px] space-y-3">
+            <PopoverContent
+              align="end"
+              className="w-[420px] space-y-3 border-red-800/30 bg-stone-50 dark:bg-red-950/20"
+            >
               <div className="mb-4 flex w-full items-center justify-between text-xs">
-                <span className="text-muted-foreground">
+                <span className="text-stone-600 dark:text-red-200/80">
                   Available Props: {availableProps}
                 </span>
-                <span className="font-medium text-foreground">
+                <span className="font-medium text-stone-900 dark:text-red-50">
                   Selected: {clampedAmount}
                 </span>
               </div>

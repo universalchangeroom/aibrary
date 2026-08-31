@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Link2, MessagesSquare, ShieldCheck } from "lucide-react";
 
@@ -41,6 +42,15 @@ const features: Feature[] = [
 export function Hero() {
   return (
     <section className="mx-auto flex w-full max-w-5xl flex-col items-center px-6 py-24 text-center">
+      <Image
+        src="/chatshare-logo.jpg"
+        alt="ChatShare logo"
+        width={640}
+        height={160}
+        priority
+        className="mx-auto mb-8 h-auto w-full max-w-md"
+      />
+
       <Badge variant="secondary" className="mb-6">
         Now in early access
       </Badge>
