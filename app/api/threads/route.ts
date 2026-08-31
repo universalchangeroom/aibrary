@@ -1,6 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
+import { asChatMessages } from "@/lib/types";
+import { parseRawText } from "@/lib/parse-raw-text";
+import {
+  IMAGE_REVIEW_MESSAGE,
+  resolveThreadStatusForContent,
+} from "@/lib/thread-status";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -12,6 +19,8 @@ interface MessageBody {
 interface PublishThreadBody {
   title?: unknown;
   content?: unknown;
+  messages?: unknown;
+  transcript?: unknown;
   source_model?: unknown;
   source?: unknown;
   tags?: unknown;
@@ -52,6 +61,10 @@ function sourceModelFromPayload(body: PublishThreadBody): string | null {
         return "GPT-4o";
       case "Claude":
         return "Claude 3.5 Sonnet";
+      case "DeepSeek":
+        return "DeepSeek";
+      case "Gemini":
+        return "Gemini";
       case "Perplexity":
         return "Other";
       case "Pasted Text":
@@ -68,6 +81,8 @@ function sourceModelFromPayload(body: PublishThreadBody): string | null {
  * POST /api/threads
  * Authorization: Bearer <supabase_access_token>
  * Body: { title, content, source_model?, tags?, is_public? }
+ *   `content` is the jsonb transcript: [{ role, content }].
+ *   Aliases: `messages` (same array), `transcript` (raw Markdown string).
  *
  * Verifies the JWT via Supabase Auth, then inserts a public.threads row
  * owned by that user (author_id = auth user id).
@@ -112,7 +127,17 @@ export async function POST(request: Request) {
     typeof body.title === "string" && body.title.trim()
       ? body.title.trim()
       : "";
-  const content = body.content;
+  // Canonical column is `content` (jsonb [{role, content}]). Also accept
+  // `messages` / a Markdown `transcript` string so editor payloads are not dropped.
+  let content: unknown = body.content ?? body.messages;
+  if (!isMessageArray(content)) {
+    const coerced = asChatMessages(content);
+    if (coerced.length > 0) content = coerced;
+  }
+  if (!isMessageArray(content) && typeof body.transcript === "string") {
+    const parsed = parseRawText(body.transcript);
+    if (parsed.messages.length > 0) content = parsed.messages;
+  }
   const tags = Array.isArray(body.tags)
     ? body.tags.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
     : [];
@@ -126,7 +151,8 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!isMessageArray(content)) {
+  const messagesToInsert = asChatMessages(content);
+  if (messagesToInsert.length === 0) {
     return NextResponse.json(
       {
         success: false,
@@ -180,17 +206,22 @@ export async function POST(request: Request) {
     console.warn("[api/threads] profile upsert:", profileError.message);
   }
 
+  // Image Markdown in any turn → hold for admin review off the public feed.
+  const status = resolveThreadStatusForContent(messagesToInsert);
+  const pendingReview = status === "pending_review";
+
   const { data: thread, error: insertError } = await supabase
     .from("threads")
     .insert({
       author_id: user.id,
       title,
-      content,
+      content: messagesToInsert,
       source_model: sourceModel,
       tags,
       is_public: isPublic,
+      status,
     })
-    .select("id, title, created_at")
+    .select("id, title, created_at, status")
     .single();
 
   if (insertError || !thread) {
@@ -206,11 +237,13 @@ export async function POST(request: Request) {
   return NextResponse.json(
     {
       success: true,
+      ...(pendingReview ? { message: IMAGE_REVIEW_MESSAGE } : {}),
       data: {
         id: thread.id,
         title: thread.title,
         created_at: thread.created_at,
         author_id: user.id,
+        status: thread.status ?? status,
       },
     },
     { status: 201 }

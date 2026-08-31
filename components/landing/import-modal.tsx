@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type DragEvent, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Loader2, Upload } from "lucide-react";
+import { ImageIcon, Loader2, Sparkles, Upload } from "lucide-react";
 
+import { MarkdownRenderer } from "@/components/markdown-renderer";
+import {
+  RichTextEditor,
+  type RichTextEditorHandle,
+} from "@/components/rich-text-editor";
 import { AuthModal } from "@/components/auth/auth-modal";
+import { BookmarkletCard } from "@/components/import/bookmarklet-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,16 +24,32 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
+import {
+  CHATSHARE_PENDING_HASH_KEY,
+  CHATSHARE_PENDING_IMPORT_KEY,
+} from "@/lib/bookmarklet";
 import type { ImportedMessage } from "@/lib/import-link/types";
+import { messagesToLabeledTranscript } from "@/lib/messages-to-transcript";
+import { parseTags } from "@/lib/parse-transcript";
+import { parseRawText } from "@/lib/parse-raw-text";
+import { suggestTags } from "@/lib/suggest-tags";
+import { cn } from "@/lib/utils";
 
 interface ImportModalProps {
   triggerLabel?: string;
   triggerClassName?: string;
 }
 
-type ImportMode = "link" | "text";
+type ImportMode = "link" | "text" | "screenshot";
+
+const SCREENSHOT_ACCEPT = ".png,.jpg,.jpeg,.webp";
+const SCREENSHOT_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+]);
 
 type ParsedPreview = {
   source: string;
@@ -132,21 +154,39 @@ function normalizeParseTextPayload(payload: unknown): ParsedPreview {
 
   if (messages.length === 0) {
     throw new Error(
-      'Could not detect speaker turns. Use labels like "User:" / "You:" and "ChatGPT:" / "Assistant:".'
+      'Could not detect speaker turns. Use labels like "User:" / "You:" and "DeepSeek:" / "ChatGPT:" / "Assistant:" / "Thought process:".'
     );
   }
 
+  const source =
+    typeof data.source === "string" && data.source.trim()
+      ? data.source
+      : "Pasted Text";
+  const defaultTitle =
+    source === "DeepSeek"
+      ? "Imported DeepSeek Thread"
+      : source === "Gemini"
+        ? "Imported Gemini Thread"
+        : source === "Claude"
+          ? "Imported Claude Thread"
+          : "Imported Thread";
+
   return {
-    source: "Pasted Text",
+    source,
     title:
       typeof data.title === "string" && data.title.trim()
         ? data.title
-        : "Imported Thread",
-    originalUrl: "",
+        : defaultTitle,
+    originalUrl:
+      typeof data.originalUrl === "string" ? data.originalUrl : "",
     messages,
     verified: false,
   };
 }
+
+/** Accepted public share links for the Paste Link import flow. */
+const SUPPORTED_SHARE_URL =
+  /^https?:\/\/(?:(?:www\.)?(?:chatgpt\.com|chat\.openai\.com)\/share\/|(?:www\.)?chat\.deepseek\.com\/share\/)[a-zA-Z0-9._-]+\/?$/i;
 
 export function ImportModal({
   triggerLabel = "Get started free",
@@ -161,6 +201,7 @@ export function ImportModal({
   const [rawText, setRawText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isParsingText, setIsParsingText] = useState(false);
+  const [isParsingScreenshot, setIsParsingScreenshot] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Parsed thread kept in memory across auth so sign-in does not drop the draft. */
@@ -169,23 +210,225 @@ export function ImportModal({
   const publishAfterAuthRef = useRef(false);
   /** Prevents double POST if auth success and session effect both fire. */
   const publishInFlightRef = useRef(false);
+  const pendingImportHandledRef = useRef(false);
+  const editorRef = useRef<RichTextEditorHandle>(null);
+  const screenshotInputRef = useRef<HTMLInputElement>(null);
+  const [screenshotDragActive, setScreenshotDragActive] = useState(false);
+  const [screenshotFileName, setScreenshotFileName] = useState<string | null>(
+    null
+  );
+  const [showPasteHint, setShowPasteHint] = useState(false);
+  const [pasteSourceLabel, setPasteSourceLabel] = useState("Gemini");
+  const [tagsInput, setTagsInput] = useState("");
+  /** Keywords from the last click of “Suggest Tags” (not live auto-run). */
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
+
+  /** Live parse of the Paste Text transcript (client-side parseRawText). */
+  const parsedConversation = useMemo(() => {
+    try {
+      return parseRawText(rawText);
+    } catch {
+      return {
+        source: "Pasted Text",
+        title: "Imported Thread",
+        messages: [] as Array<{ role: "user" | "assistant"; content: string }>,
+      };
+    }
+  }, [rawText]);
+
+  const livePreviewMessages = useMemo(
+    () =>
+      (parsedConversation.messages ?? []).filter(
+        (m) =>
+          m &&
+          (m.role === "user" || m.role === "assistant") &&
+          typeof m.content === "string" &&
+          m.content.trim().length > 0
+      ),
+    [parsedConversation.messages]
+  );
+
+  const livePreview: ParsedPreview | null =
+    livePreviewMessages.length > 0
+      ? {
+          source: parsedConversation.source || "Pasted Text",
+          title: parsedConversation.title || "Imported Thread",
+          originalUrl: "",
+          messages: livePreviewMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+          verified: false,
+        }
+      : null;
+
+  const appliedTagSet = useMemo(() => {
+    return new Set(parseTags(tagsInput).map((tag) => tag.toLowerCase()));
+  }, [tagsInput]);
+
+  const visibleSuggestedTags = useMemo(
+    () =>
+      suggestedTags.filter((tag) => !appliedTagSet.has(tag.toLowerCase())),
+    [suggestedTags, appliedTagSet]
+  );
+
+  function handleSuggestTags() {
+    const next = suggestTags(rawText, 5);
+    setSuggestedTags(next);
+  }
+
+  function appendSuggestedTag(tag: string) {
+    setTagsInput((prev) => {
+      const existing = parseTags(prev);
+      if (existing.some((t) => t.toLowerCase() === tag.toLowerCase())) {
+        return prev;
+      }
+      const trimmed = prev.trim();
+      if (!trimmed) return tag;
+      if (trimmed.endsWith(",")) return `${trimmed} ${tag}`;
+      return `${trimmed}, ${tag}`;
+    });
+    // Hide chip immediately (also covered by appliedTagSet filter).
+    setSuggestedTags((prev) =>
+      prev.filter((t) => t.toLowerCase() !== tag.toLowerCase())
+    );
+  }
 
   function resetState() {
     setMode("link");
     setUrl("");
     setRawText("");
+    setTagsInput("");
+    setSuggestedTags([]);
     setError(null);
     setResult(null);
     setIsLoading(false);
     setIsParsingText(false);
+    setIsParsingScreenshot(false);
     setIsPublishing(false);
+    setScreenshotDragActive(false);
+    setScreenshotFileName(null);
     publishAfterAuthRef.current = false;
     publishInFlightRef.current = false;
   }
 
+  /**
+   * Restore a thread preview queued by the bookmarklet
+   * (localStorage and/or ?import=true + hash handoff).
+   */
+  useEffect(() => {
+    if (typeof window === "undefined" || pendingImportHandledRef.current) {
+      return;
+    }
+
+    try {
+      // Cross-origin handoff: bookmarklet opens ChatShare with #chatshare_pending=...
+      const { hash } = window.location;
+      const hashPrefix = `#${CHATSHARE_PENDING_HASH_KEY}=`;
+      if (hash.startsWith(hashPrefix)) {
+        const encoded = hash.slice(hashPrefix.length);
+        const decoded = decodeURIComponent(encoded);
+        // Validate JSON before persisting
+        JSON.parse(decoded);
+        localStorage.setItem(CHATSHARE_PENDING_IMPORT_KEY, decoded);
+        // Strip hash while keeping ?import=true when present
+        window.history.replaceState(
+          null,
+          "",
+          window.location.pathname + window.location.search
+        );
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      const importFlag = params.get("import") === "true";
+      const raw = localStorage.getItem(CHATSHARE_PENDING_IMPORT_KEY);
+
+      if (!raw && !importFlag) {
+        return;
+      }
+
+      pendingImportHandledRef.current = true;
+
+      if (!raw) {
+        setOpen(true);
+        setError(
+          "No pending import found. Run the ChatShare bookmarklet on a chat tab first."
+        );
+        // Drop empty ?import=true from the URL
+        if (importFlag) {
+          params.delete("import");
+          const q = params.toString();
+          window.history.replaceState(
+            null,
+            "",
+            window.location.pathname + (q ? `?${q}` : "")
+          );
+        }
+        return;
+      }
+
+      const data = JSON.parse(raw) as Record<string, unknown>;
+      const preview = normalizeParseTextPayload({ success: true, data });
+      localStorage.removeItem(CHATSHARE_PENDING_IMPORT_KEY);
+      setResult(preview);
+      setOpen(true);
+      setError(null);
+
+      if (importFlag) {
+        params.delete("import");
+        const q = params.toString();
+        window.history.replaceState(
+          null,
+          "",
+          window.location.pathname + (q ? `?${q}` : "")
+        );
+      }
+    } catch {
+      pendingImportHandledRef.current = true;
+      try {
+        localStorage.removeItem(CHATSHARE_PENDING_IMPORT_KEY);
+      } catch {
+        // ignore
+      }
+      setOpen(true);
+      setError(
+        "Could not restore the bookmarklet import. Try Paste Text instead."
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only pending import hydrate
+  }, []);
+
+  // Bookmarklet clipboard handoff: show paste tip on Paste Text (or when URL/session flags it).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const fromUrl = params.get("paste") === "1";
+      const fromSession =
+        sessionStorage.getItem("chatshare_expect_paste") === "1";
+      if (fromUrl || fromSession) {
+        const src =
+          params.get("source") ||
+          sessionStorage.getItem("chatshare_paste_source") ||
+          "Gemini";
+        setPasteSourceLabel(src);
+        if (fromUrl || mode === "text") {
+          setShowPasteHint(true);
+        }
+        if (fromUrl) {
+          setMode("text");
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [mode]);
+
   function sourceModelFromResult(preview: ParsedPreview): string {
     if (preview.source === "ChatGPT") return "GPT-4o";
     if (preview.source === "Claude") return "Claude 3.5 Sonnet";
+    if (preview.source === "DeepSeek") return "DeepSeek";
+    if (preview.source === "Gemini") return "Gemini";
     if (preview.source === "Perplexity") return "Other";
     return preview.source || "Other";
   }
@@ -214,7 +457,7 @@ export function ImportModal({
           source: preview.source,
           source_model: sourceModelFromResult(preview),
           originalUrl: preview.originalUrl,
-          tags: [],
+          tags: parseTags(tagsInput),
           is_public: true,
         }),
       });
@@ -222,7 +465,8 @@ export function ImportModal({
       const payload = (await response.json().catch(() => ({}))) as {
         success?: boolean;
         error?: string;
-        data?: { id?: string };
+        message?: string;
+        data?: { id?: string; status?: string };
       };
 
       if (!response.ok || !payload.success || !payload.data?.id) {
@@ -230,6 +474,17 @@ export function ImportModal({
       }
 
       const threadId = payload.data.id;
+      const pending =
+        payload.data.status === "pending_review" ||
+        (typeof payload.message === "string" && payload.message.length > 0);
+
+      if (pending && typeof window !== "undefined") {
+        const notice =
+          payload.message ||
+          "Your thread contains image content and has been submitted for admin review before appearing on the public feed.";
+        window.sessionStorage.setItem("chatshare_publish_notice", notice);
+      }
+
       setOpen(false);
       resetState();
       router.push(`/feed/${threadId}`);
@@ -245,23 +500,83 @@ export function ImportModal({
   }
 
   async function handlePublish() {
-    if (!result || result.messages.length === 0) return;
+    // Flush TipTap so we don't publish a stale empty React snapshot.
+    const markdown =
+      editorRef.current?.getMarkdown()?.trim() || rawText.trim();
+    if (markdown && markdown !== rawText) {
+      setRawText(markdown);
+    }
+
+    let preview = result;
+    if (!preview && mode === "text") {
+      const parsed = parseRawText(markdown);
+      const messages = (parsed.messages ?? []).filter(
+        (m) =>
+          (m.role === "user" || m.role === "assistant") &&
+          typeof m.content === "string" &&
+          m.content.trim().length > 0
+      );
+      if (messages.length > 0) {
+        preview = {
+          source: parsed.source || "Pasted Text",
+          title: parsed.title || "Imported Thread",
+          originalUrl: "",
+          messages: messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+          verified: false,
+        };
+        setResult(preview);
+      }
+    }
+
+    if (mode === "screenshot" && preview) {
+      const parsed = parseRawText(markdown);
+      const messages = (parsed.messages ?? []).filter(
+        (m) =>
+          (m.role === "user" || m.role === "assistant") &&
+          typeof m.content === "string" &&
+          m.content.trim().length > 0
+      );
+      preview = {
+        ...preview,
+        messages:
+          messages.length > 0
+            ? messages.map((m) => ({ role: m.role, content: m.content }))
+            : preview.messages,
+      };
+      setResult(preview);
+    }
+
+    preview =
+      preview ??
+      (mode === "text"
+        ? livePreview
+        : mode === "screenshot"
+          ? result
+          : null);
+    if (!preview || preview.messages.length === 0) return;
 
     const accessToken = session?.access_token;
     if (!accessToken) {
-      // Keep `result` (draft) in state; open auth so user can continue after sign-in.
+      if (!result && (livePreview || preview)) {
+        setResult(livePreview ?? preview);
+      }
       publishAfterAuthRef.current = true;
       setAuthOpen(true);
       setError(null);
       return;
     }
 
-    await publishThread(accessToken, result);
+    await publishThread(accessToken, preview);
   }
 
   /** After sign-in/up from AuthModal, publish the draft if the user intended to. */
   async function handleAuthSuccess() {
-    if (!publishAfterAuthRef.current || !result) return;
+    const preview =
+      result ?? (mode === "text" ? livePreview : mode === "screenshot" ? result : null);
+    if (!publishAfterAuthRef.current || !preview) return;
 
     publishAfterAuthRef.current = false;
 
@@ -279,7 +594,7 @@ export function ImportModal({
       return;
     }
 
-    await publishThread(token, result);
+    await publishThread(token, preview);
   }
 
   // If auth state becomes available while a publish was deferred, resume once.
@@ -300,6 +615,83 @@ export function ImportModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resume only when session appears after deferred publish
   }, [session?.access_token, result, isPublishing, authOpen]);
 
+  async function handleScreenshotFile(file: File) {
+    setError(null);
+    setResult(null);
+
+    const mime = (file.type || "").toLowerCase();
+    if (!SCREENSHOT_MIME.has(mime)) {
+      setError("Unsupported file type. Use PNG, JPG, or WebP.");
+      return;
+    }
+
+    setScreenshotFileName(file.name);
+    setIsParsingScreenshot(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/parse-screenshot", {
+        method: "POST",
+        body: formData,
+      });
+
+      const payload: unknown = await response.json();
+      if (!response.ok) {
+        const err = payload as { error?: string };
+        throw new Error(err.error || "Failed to parse screenshot.");
+      }
+
+      const preview = normalizeParseTextPayload(payload);
+      if (preview.messages.length === 0) {
+        throw new Error(
+          "No conversation turns were detected in this screenshot."
+        );
+      }
+
+      const transcript = messagesToLabeledTranscript(
+        preview.messages,
+        preview.source
+      );
+
+      setResult(preview);
+      setRawText(transcript);
+      setSuggestedTags(suggestTags(transcript, 5));
+      setMode("screenshot");
+    } catch (err) {
+      setResult(null);
+      setError(
+        err instanceof Error ? err.message : "Failed to parse screenshot."
+      );
+    } finally {
+      setIsParsingScreenshot(false);
+    }
+  }
+
+  function handleScreenshotInputChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (file) void handleScreenshotFile(file);
+    event.target.value = "";
+  }
+
+  function handleScreenshotDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setScreenshotDragActive(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) void handleScreenshotFile(file);
+  }
+
+  function handleScreenshotDragOver(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setScreenshotDragActive(true);
+  }
+
+  function handleScreenshotDragLeave(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setScreenshotDragActive(false);
+  }
+
   async function handleImport(event: FormEvent) {
     event.preventDefault();
     setError(null);
@@ -307,12 +699,14 @@ export function ImportModal({
 
     const trimmed = url.trim();
     if (!trimmed) {
-      setError("Please paste a ChatGPT share URL.");
+      setError("Please paste a ChatGPT or DeepSeek share URL.");
       return;
     }
 
-    if (!/^https?:\/\/.+/i.test(trimmed)) {
-      setError("Invalid URL. Example: https://chatgpt.com/share/…");
+    if (!SUPPORTED_SHARE_URL.test(trimmed)) {
+      setError(
+        "Invalid URL. Use a ChatGPT or DeepSeek share link, e.g. https://chatgpt.com/share/… or https://chat.deepseek.com/share/…"
+      );
       return;
     }
 
@@ -342,6 +736,7 @@ export function ImportModal({
       }
 
       setResult(preview);
+      setMode("link");
     } catch (err) {
       setResult(null);
       setError(
@@ -352,50 +747,20 @@ export function ImportModal({
     }
   }
 
-  async function handleParseText(event: FormEvent) {
-    event.preventDefault();
-    setError(null);
-    setResult(null);
-
-    const pastedText = rawText.trim();
-    if (!pastedText) {
-      setError("Please paste conversation text before parsing.");
-      return;
-    }
-
-    setIsParsingText(true);
-
-    try {
-      const response = await fetch("/api/parse-text", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: pastedText }),
-      });
-
-      const payload: unknown = await response.json();
-
-      if (!response.ok) {
-        const err = payload as { error?: string; message?: string };
-        throw new Error(
-          err.error || err.message || "Failed to parse conversation text."
-        );
-      }
-
-      const preview = normalizeParseTextPayload(payload);
-      setResult(preview);
-    } catch (err) {
-      setResult(null);
-      setError(
-        err instanceof Error ? err.message : "Failed to parse conversation text."
-      );
-    } finally {
-      setIsParsingText(false);
-    }
-  }
-
-  const isBusy = isLoading || isParsingText || isPublishing;
-  const showTextForm = mode === "text" && !result && !isParsingText;
+  const isBusy =
+    isLoading || isParsingText || isParsingScreenshot || isPublishing;
+  const showTextForm = mode === "text" && !isParsingText;
   const showLinkForm = mode === "link" && !result;
+  const showLinkResult = Boolean(result && mode === "link");
+  const screenshotPreview = mode === "screenshot" ? result : null;
+  const publishablePreview =
+    result && mode === "link"
+      ? result
+      : mode === "text"
+        ? livePreview
+        : mode === "screenshot"
+          ? screenshotPreview
+          : result;
 
   return (
     <>
@@ -415,31 +780,48 @@ export function ImportModal({
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Import a conversation</DialogTitle>
           <DialogDescription>
-            Paste a public share link, or paste conversation text copied from
-            ChatGPT or Claude.
+            Paste a public share link, conversation text, or upload a mobile
+            scrolling screenshot to import a thread.
           </DialogDescription>
         </DialogHeader>
 
-        {!result ? (
+        {!showLinkResult ? (
           <Tabs
             value={mode}
             onValueChange={(value) => {
               setMode(value as ImportMode);
               setError(null);
-              setResult(null);
+              if (value === "text") {
+                // Leave raw transcript editable; clear link import card if any.
+                setResult(null);
+                try {
+                  if (sessionStorage.getItem("chatshare_expect_paste") === "1") {
+                    setShowPasteHint(true);
+                    setPasteSourceLabel(
+                      sessionStorage.getItem("chatshare_paste_source") ||
+                        "Gemini"
+                    );
+                  }
+                } catch {
+                  // ignore
+                }
+              }
             }}
             className="w-full"
           >
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="link" disabled={isBusy}>
+            <TabsList className="grid h-auto w-full grid-cols-3 gap-1">
+              <TabsTrigger value="link" disabled={isBusy} className="text-xs sm:text-sm">
                 Paste Link
               </TabsTrigger>
-              <TabsTrigger value="text" disabled={isBusy}>
+              <TabsTrigger value="text" disabled={isBusy} className="text-xs sm:text-sm">
                 Paste Text
+              </TabsTrigger>
+              <TabsTrigger value="screenshot" disabled={isBusy} className="text-xs sm:text-sm">
+                Upload Screenshot
               </TabsTrigger>
             </TabsList>
 
@@ -447,7 +829,9 @@ export function ImportModal({
               <TabsContent value="link" className="mt-4 space-y-4">
                 <form onSubmit={handleImport} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="home-import-url">ChatGPT share URL</Label>
+                    <Label htmlFor="home-import-url">
+                      ChatGPT or DeepSeek share URL
+                    </Label>
                     <Input
                       id="home-import-url"
                       type="url"
@@ -456,7 +840,7 @@ export function ImportModal({
                         setUrl(event.target.value);
                         setError(null);
                       }}
-                      placeholder="https://chatgpt.com/share/…"
+                      placeholder="https://chatgpt.com/share/… or https://chat.deepseek.com/share/…"
                       disabled={isLoading}
                       autoComplete="off"
                     />
@@ -480,47 +864,421 @@ export function ImportModal({
                     )}
                   </Button>
                 </form>
+
+                <BookmarkletCard />
               </TabsContent>
             ) : null}
 
             {showTextForm ? (
               <TabsContent value="text" className="mt-4 space-y-4">
-                <form onSubmit={handleParseText} className="space-y-4">
+                {showPasteHint ? (
+                  <div
+                    role="status"
+                    className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-950 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-50"
+                  >
+                    Conversation copied from {pasteSourceLabel}! Press{" "}
+                    <kbd className="rounded border border-indigo-300 bg-white/80 px-1 font-mono text-xs dark:border-indigo-700 dark:bg-indigo-900/60">
+                      Ctrl+V
+                    </kbd>{" "}
+                    (or{" "}
+                    <kbd className="rounded border border-indigo-300 bg-white/80 px-1 font-mono text-xs dark:border-indigo-700 dark:bg-indigo-900/60">
+                      Cmd+V
+                    </kbd>
+                    ) to paste.
+                  </div>
+                ) : null}
+                <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="home-import-text">Conversation text</Label>
-                    <Textarea
-                      id="home-import-text"
-                      value={rawText}
-                      onChange={(event) => {
-                        setRawText(event.target.value);
+                    <Label htmlFor="home-import-text">Raw Transcript</Label>
+                    <RichTextEditor
+                      ref={editorRef}
+                      content={rawText}
+                      onChange={(markdown) => {
+                        setRawText(markdown);
                         setError(null);
+                        if (markdown.trim()) {
+                          setShowPasteHint(false);
+                        }
                       }}
-                      placeholder="Paste conversation text here (e.g. copied directly from ChatGPT or Claude)..."
-                      disabled={isParsingText}
-                      className="min-h-[160px] max-h-[50vh] resize-y font-mono text-sm"
+                      placeholder="Paste a conversation transcript here... (Rich text, bolding, lists, and code blocks will be preserved!)"
+                      editable={!isPublishing}
+                      dense
+                      editorClassName="min-h-[180px]"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Paste from ChatGPT, Claude, or Gemini. Formatting becomes
+                      Markdown automatically; use{" "}
+                      <span className="font-medium text-foreground">User:</span>{" "}
+                      /{" "}
+                      <span className="font-medium text-foreground">
+                        Gemini:
+                      </span>{" "}
+                      (or Assistant) labels for turn detection. Live preview
+                      updates as you edit.
+                    </p>
                   </div>
 
-                  <Button
-                    type="submit"
-                    disabled={isParsingText}
-                    className="w-full sm:w-auto"
-                  >
-                    {isParsingText ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Parsing…
-                      </>
-                    ) : (
-                      <>
-                        <FileText className="h-4 w-4" />
-                        Parse Text
-                      </>
-                    )}
-                  </Button>
-                </form>
+                  {livePreview && livePreview.messages.length > 0 ? (
+                    <div className="mt-4 rounded-md border bg-muted/40 p-4">
+                      <h4 className="mb-2 text-sm font-semibold text-foreground">
+                        Conversation Preview
+                      </h4>
+                      <div className="max-h-64 space-y-3 overflow-y-auto">
+                        {livePreview.messages.map((msg, idx) => {
+                          const isUser = msg.role === "user";
+                          return (
+                            <div
+                              key={`${msg.role}-${idx}`}
+                              className={cn(
+                                "rounded border p-3 text-sm",
+                                isUser
+                                  ? "border-border bg-muted/50 text-foreground"
+                                  : "border-border bg-background text-foreground"
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "mb-2 inline-block rounded px-2 py-0.5 text-xs font-bold uppercase",
+                                  isUser
+                                    ? "bg-secondary text-secondary-foreground"
+                                    : "bg-primary/15 text-primary"
+                                )}
+                              >
+                                {isUser ? "USER" : "AI"}
+                              </span>
+                              <MarkdownRenderer content={msg.content} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : rawText.trim() ? (
+                    <p className="rounded-md border border-dashed px-3 py-3 text-xs text-muted-foreground">
+                      Waiting for labeled turns… Use{" "}
+                      <span className="font-medium text-foreground">User:</span>{" "}
+                      and{" "}
+                      <span className="font-medium text-foreground">
+                        Gemini:
+                      </span>
+                      /
+                      <span className="font-medium text-foreground">
+                        Assistant:
+                      </span>{" "}
+                      (date lines are ignored).
+                    </p>
+                  ) : null}
+
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-end justify-between gap-2">
+                      <Label htmlFor="home-import-tags">Tags</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleSuggestTags}
+                        disabled={isPublishing || !rawText.trim()}
+                      >
+                        <Sparkles className="h-4 w-4" />
+                        Suggest Tags
+                      </Button>
+                    </div>
+                    <Input
+                      id="home-import-tags"
+                      value={tagsInput}
+                      onChange={(event) => setTagsInput(event.target.value)}
+                      placeholder="react, nextjs, authentication"
+                      disabled={isPublishing}
+                      autoComplete="off"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Separate tags with commas. They are stored with the
+                      published thread.
+                    </p>
+                    {visibleSuggestedTags.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                        {visibleSuggestedTags.map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => appendSuggestedTag(tag)}
+                            className="focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            aria-label={`Add tag ${tag}`}
+                          >
+                            <Badge
+                              variant="outline"
+                              className="cursor-pointer border-dashed hover:border-primary hover:bg-primary/5"
+                            >
+                              + {tag}
+                            </Badge>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      onClick={() => void handlePublish()}
+                      disabled={
+                        !livePreview || isPublishing || isAuthLoading
+                      }
+                    >
+                      {isPublishing ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Publishing…
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-4 w-4" />
+                          {session ? "Publish Thread" : "Sign in & Publish"}
+                        </>
+                      )}
+                    </Button>
+                    {rawText.trim() ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={isPublishing}
+                        onClick={() => {
+                          setRawText("");
+                          setError(null);
+                          setResult(null);
+                        }}
+                      >
+                        Clear
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+
+                <BookmarkletCard />
               </TabsContent>
             ) : null}
+
+            <TabsContent value="screenshot" className="mt-4 space-y-4">
+              {isParsingScreenshot ? (
+                <div className="flex items-center justify-center gap-2 rounded-md border border-dashed px-4 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Reading screenshot and extracting conversation…
+                </div>
+              ) : (
+                <>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      screenshotInputRef.current?.click();
+                    }
+                  }}
+                  onDragOver={handleScreenshotDragOver}
+                  onDragLeave={handleScreenshotDragLeave}
+                  onDrop={handleScreenshotDrop}
+                  onClick={() => screenshotInputRef.current?.click()}
+                  className={cn(
+                    "flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors",
+                    screenshotDragActive
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-muted/30 hover:border-primary/50 hover:bg-muted/50"
+                  )}
+                >
+                  <ImageIcon className="h-10 w-10 text-muted-foreground" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-foreground">
+                      Drop a mobile chat screenshot here
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      PNG, JPG, or WebP — long scrolling captures supported
+                    </p>
+                    {screenshotFileName ? (
+                      <p className="text-xs font-medium text-primary">
+                        Last file: {screenshotFileName}
+                      </p>
+                    ) : null}
+                  </div>
+                  <Button type="button" variant="secondary" size="sm" asChild>
+                    <span>Choose image</span>
+                  </Button>
+                  <input
+                    ref={screenshotInputRef}
+                    type="file"
+                    accept={SCREENSHOT_ACCEPT}
+                    className="sr-only"
+                    onChange={handleScreenshotInputChange}
+                    disabled={isParsingScreenshot}
+                  />
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  We use a vision model to detect User vs AI turns and rebuild
+                  Markdown (code blocks, lists, and formatting preserved).
+                </p>
+
+                {screenshotPreview && screenshotPreview.messages.length > 0 ? (
+                  <>
+                    <div className="rounded-md border bg-muted/40 p-4">
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <Badge variant="secondary">
+                          {screenshotPreview.source}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {screenshotPreview.messages.length} messages
+                        </span>
+                      </div>
+                      <h4 className="mb-2 text-sm font-semibold text-foreground">
+                        Conversation Preview
+                      </h4>
+                      <div className="max-h-64 space-y-3 overflow-y-auto">
+                        {screenshotPreview.messages.map((msg, idx) => {
+                          const isUser = msg.role === "user";
+                          return (
+                            <div
+                              key={`${msg.role}-${idx}`}
+                              className={cn(
+                                "rounded border p-3 text-sm",
+                                isUser
+                                  ? "border-border bg-muted/50 text-foreground"
+                                  : "border-border bg-background text-foreground"
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "mb-2 inline-block rounded px-2 py-0.5 text-xs font-bold uppercase",
+                                  isUser
+                                    ? "bg-secondary text-secondary-foreground"
+                                    : "bg-primary/15 text-primary"
+                                )}
+                              >
+                                {isUser ? "USER" : "AI"}
+                              </span>
+                              <MarkdownRenderer content={msg.content} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="home-import-screenshot-title">
+                        Thread title
+                      </Label>
+                      <Input
+                        id="home-import-screenshot-title"
+                        value={screenshotPreview.title}
+                        onChange={(event) => {
+                          const title = event.target.value;
+                          setResult((prev) =>
+                            prev ? { ...prev, title } : prev
+                          );
+                        }}
+                        disabled={isPublishing}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="home-import-screenshot-text">
+                        Editable transcript
+                      </Label>
+                      <RichTextEditor
+                        ref={editorRef}
+                        content={rawText}
+                        onChange={(markdown) => {
+                          setRawText(markdown);
+                          setError(null);
+                        }}
+                        placeholder="Parsed transcript appears here…"
+                        editable={!isPublishing}
+                        dense
+                        editorClassName="min-h-[160px]"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-end justify-between gap-2">
+                        <Label htmlFor="home-import-screenshot-tags">Tags</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleSuggestTags}
+                          disabled={isPublishing || !rawText.trim()}
+                        >
+                          <Sparkles className="h-4 w-4" />
+                          Suggest Tags
+                        </Button>
+                      </div>
+                      <Input
+                        id="home-import-screenshot-tags"
+                        value={tagsInput}
+                        onChange={(event) => setTagsInput(event.target.value)}
+                        placeholder="react, nextjs, authentication"
+                        disabled={isPublishing}
+                        autoComplete="off"
+                      />
+                      {visibleSuggestedTags.length > 0 ? (
+                        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                          {visibleSuggestedTags.map((tag) => (
+                            <button
+                              key={tag}
+                              type="button"
+                              onClick={() => appendSuggestedTag(tag)}
+                              className="focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                              aria-label={`Add tag ${tag}`}
+                            >
+                              <Badge
+                                variant="outline"
+                                className="cursor-pointer border-dashed hover:border-primary hover:bg-primary/5"
+                              >
+                                + {tag}
+                              </Badge>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        onClick={() => void handlePublish()}
+                        disabled={
+                          !screenshotPreview || isPublishing || isAuthLoading
+                        }
+                      >
+                        {isPublishing ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Publishing…
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-4 w-4" />
+                            {session ? "Publish Thread" : "Sign in & Publish"}
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={isPublishing}
+                        onClick={() => {
+                          setRawText("");
+                          setResult(null);
+                          setScreenshotFileName(null);
+                          setError(null);
+                        }}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </>
+                ) : null}
+                </>
+              )}
+            </TabsContent>
 
             {/* Keep tab content mounted while loading text mode without the textarea */}
             {mode === "text" && isParsingText ? (
@@ -530,6 +1288,13 @@ export function ImportModal({
                   Parsing conversation text…
                 </div>
               </TabsContent>
+            ) : null}
+
+            {/* While link is loading, still surface the card so users can discover the bookmarklet */}
+            {mode === "link" && isLoading ? (
+              <div className="mt-4 space-y-4">
+                <BookmarkletCard />
+              </div>
             ) : null}
           </Tabs>
         ) : null}
@@ -547,51 +1312,73 @@ export function ImportModal({
           </div>
         ) : null}
 
-        {result && !isLoading && !isParsingText ? (
+        {showLinkResult && !isLoading && !isParsingText ? (
           <div className="space-y-4">
             <div className="space-y-4 rounded-lg border p-4">
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary">{result.source}</Badge>
-                  {result.verified ? (
+                  <Badge variant="secondary">{result!.source}</Badge>
+                  {result!.verified ? (
                     <Badge variant="outline">Verified</Badge>
                   ) : null}
                   <span className="text-xs text-muted-foreground">
-                    {result.messages.length} messages
+                    {result!.messages.length} messages
                   </span>
                 </div>
                 <h3 className="text-lg font-semibold leading-snug">
-                  {result.title}
+                  {result!.title}
                 </h3>
-                {result.originalUrl ? (
+                {result!.originalUrl ? (
                   <p className="break-all text-xs text-muted-foreground">
-                    {result.originalUrl}
+                    {result!.originalUrl}
                   </p>
                 ) : null}
               </div>
 
               <ul className="max-h-72 space-y-3 overflow-y-auto pr-1">
-                {result.messages.map((message, index) => (
+                {result!.messages.map((message, index) => (
                   <li
                     key={`${message.role}-${index}`}
-                    className="rounded-md border bg-muted/40 p-3 text-left"
+                    className={cn(
+                      "rounded-md border p-3 text-left",
+                      message.role === "user"
+                        ? "bg-muted/50 text-foreground"
+                        : "bg-card text-card-foreground"
+                    )}
                   >
-                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {message.role === "user" ? "User" : "AI"}
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {message.role === "user" ? "USER" : "AI"}
                     </p>
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {message.content}
-                    </p>
+                    <MarkdownRenderer content={message.content} />
                   </li>
                 ))}
               </ul>
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="home-import-tags-preview">Tags</Label>
+              <Input
+                id="home-import-tags-preview"
+                value={tagsInput}
+                onChange={(event) => setTagsInput(event.target.value)}
+                placeholder="react, nextjs, authentication"
+                disabled={isPublishing}
+                autoComplete="off"
+              />
+              <p className="text-xs text-muted-foreground">
+                Separate tags with commas.
+              </p>
+            </div>
+
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
-                onClick={handlePublish}
-                disabled={isPublishing || isAuthLoading}
+                onClick={() => void handlePublish()}
+                disabled={
+                  isPublishing ||
+                  isAuthLoading ||
+                  !publishablePreview
+                }
               >
                 {isPublishing ? (
                   <>
