@@ -1,6 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
 
 /**
+ * Next.js may Data-Cache GET responses from the patched global fetch.
+ * Service-role reads/writes must always hit the live database.
+ */
+function fetchNoStore(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  return fetch(input, { ...init, cache: "no-store" });
+}
+
+/**
  * Privileged Supabase client (service role). Server-only.
  * Bypasses RLS so admins can list pending threads and look up author emails.
  *
@@ -17,6 +28,9 @@ export function createServiceClient() {
   }
 
   return createClient(url, serviceKey, {
+    global: {
+      fetch: fetchNoStore,
+    },
     auth: {
       persistSession: false,
       autoRefreshToken: false,

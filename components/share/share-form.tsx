@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, Sparkles } from "lucide-react";
 
 import { MarkdownRenderer } from "@/components/markdown-renderer";
@@ -22,29 +22,42 @@ import {
 } from "@/components/ui/select";
 import { parseRawText } from "@/lib/parse-raw-text";
 import { parseTags } from "@/lib/parse-transcript";
+import {
+  readBookmarkletSourceModel,
+  SHARE_SOURCE_MODEL_LABELS,
+  SHARE_SOURCE_MODELS,
+} from "@/lib/share-source-model";
 import { suggestTags } from "@/lib/suggest-tags";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
-const SOURCE_MODELS = [
-  "Claude 3.5 Sonnet",
-  "Gemini 1.5 Pro",
-  "DeepSeek-R1",
-  "GPT-4o",
-  "Grok 2",
-  "Other",
-] as const;
-
 export function ShareForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const editorRef = useRef<RichTextEditorHandle>(null);
+  const sourceModelHydratedRef = useRef(false);
   const [title, setTitle] = useState("");
-  const [sourceModel, setSourceModel] = useState<string>("");
+  const [sourceModel, setSourceModel] = useState(() =>
+    readBookmarkletSourceModel(searchParams)
+  );
   const [tagsInput, setTagsInput] = useState("");
   const [transcriptText, setTranscriptText] = useState("");
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Re-hydrate if URL/session params arrive after first paint (Suspense / paste=1).
+  // Do not overwrite after the user has a value (or after a successful hydrate).
+  useEffect(() => {
+    if (sourceModelHydratedRef.current) return;
+    const resolved = readBookmarkletSourceModel(searchParams);
+    if (!resolved) return;
+    setSourceModel((prev) => prev || resolved);
+    sourceModelHydratedRef.current = true;
+    setError((prev) =>
+      prev === "Please choose a source model." ? null : prev
+    );
+  }, [searchParams]);
 
   const parsedConversation = useMemo(() => {
     try {
@@ -98,9 +111,15 @@ export function ShareForm() {
       return;
     }
 
-    if (!sourceModel) {
+    // Prefer controlled Select state; fall back to bookmarklet URL/session mapping.
+    const resolvedModel =
+      sourceModel.trim() || readBookmarkletSourceModel(searchParams);
+    if (!resolvedModel) {
       setError("Please choose a source model.");
       return;
+    }
+    if (resolvedModel !== sourceModel) {
+      setSourceModel(resolvedModel);
     }
 
     // Flush TipTap on Publish — React state can lag one paste/update behind.
@@ -164,7 +183,7 @@ export function ShareForm() {
         },
         body: JSON.stringify({
           title: trimmedTitle,
-          source_model: sourceModel,
+          source_model: resolvedModel,
           tags,
           content,
           is_public: true,
@@ -220,14 +239,23 @@ export function ShareForm() {
 
       <div className="space-y-2">
         <Label htmlFor="source-model">Source Model</Label>
-        <Select value={sourceModel} onValueChange={setSourceModel}>
+        <Select
+          value={sourceModel || undefined}
+          onValueChange={(value) => {
+            setSourceModel(value);
+            sourceModelHydratedRef.current = true;
+            setError((prev) =>
+              prev === "Please choose a source model." ? null : prev
+            );
+          }}
+        >
           <SelectTrigger id="source-model">
             <SelectValue placeholder="Select a model" />
           </SelectTrigger>
           <SelectContent>
-            {SOURCE_MODELS.map((model) => (
+            {SHARE_SOURCE_MODELS.map((model) => (
               <SelectItem key={model} value={model}>
-                {model}
+                {SHARE_SOURCE_MODEL_LABELS[model] ?? model}
               </SelectItem>
             ))}
           </SelectContent>
