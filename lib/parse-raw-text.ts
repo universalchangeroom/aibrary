@@ -153,7 +153,7 @@ function extractInlineReasoning(body: string): {
   );
   if (leading) {
     const reasoning = leading[1].trim();
-    let content = leading[2]
+    const content = leading[2]
       .trim()
       .replace(/^(?:Response|Answer|Final\s+answer)\s*:\s*/i, "");
     if (reasoning && content) return { content, reasoning };

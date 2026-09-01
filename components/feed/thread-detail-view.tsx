@@ -153,7 +153,7 @@ async function parseTranscriptViaApi(text: string): Promise<ChatMessage[]> {
 export function ThreadDetailView({
   thread: initialThread,
   isAuthenticated,
-  currentUserId,
+  currentUserId: _currentUserId,
   displayedPropsTotal,
 }: ThreadDetailViewProps) {
   const router = useRouter();
