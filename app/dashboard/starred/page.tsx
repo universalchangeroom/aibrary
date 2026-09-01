@@ -30,7 +30,10 @@ export default async function StarredDashboardPage() {
     .order("created_at", { ascending: false });
 
   const threads: ThreadWithFootnotes[] = (starredRows ?? []).flatMap((row) => {
-    const thread = row?.threads as Record<string, unknown> | null;
+    const threadRow = row?.threads;
+    const thread = (
+      Array.isArray(threadRow) ? threadRow[0] : threadRow
+    ) as unknown as Record<string, unknown> | null;
     if (!thread || typeof thread.id !== "string") return [];
     return [
       {
