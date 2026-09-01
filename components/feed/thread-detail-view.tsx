@@ -48,7 +48,6 @@ import {
 interface ThreadDetailViewProps {
   thread: ThreadWithFootnotes;
   isAuthenticated: boolean;
-  currentUserId: string | null;
   /** Optimistic Props total for the emoji row; falls back to thread.total_tokens. */
   displayedPropsTotal?: number;
 }
@@ -153,7 +152,6 @@ async function parseTranscriptViaApi(text: string): Promise<ChatMessage[]> {
 export function ThreadDetailView({
   thread: initialThread,
   isAuthenticated,
-  currentUserId,
   displayedPropsTotal,
 }: ThreadDetailViewProps) {
   const router = useRouter();

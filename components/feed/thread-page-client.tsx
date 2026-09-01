@@ -66,7 +66,6 @@ export function ThreadPageClient({
         key={thread.id}
         thread={thread}
         isAuthenticated={isAuthenticated}
-        currentUserId={currentUserId}
         displayedPropsTotal={displayedPropsTotal}
       />
     </>

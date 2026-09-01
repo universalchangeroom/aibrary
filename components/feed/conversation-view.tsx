@@ -180,8 +180,6 @@ export const ConversationView = forwardRef<
 >(function ConversationView(
   {
     messages = [],
-    footnotes: _footnotes = [],
-    threadId: _threadId,
     isEditing = false,
     onMessageContentChange,
     onRemoveMessage,

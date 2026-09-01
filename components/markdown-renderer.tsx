@@ -5,7 +5,6 @@ import {
   useState,
   type ComponentPropsWithoutRef,
   type ReactNode,
-  type SyntheticEvent,
 } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -169,7 +168,7 @@ function MarkdownImage({ src, alt, title, className, ...rest }: ImgProps) {
     );
   }
 
-  function handleError(_event: SyntheticEvent<HTMLImageElement>) {
+  function handleError() {
     setFailed(true);
   }
 
