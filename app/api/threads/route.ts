@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
+import { getHonestStartBalance } from "@/lib/props-balance";
 import { asChatMessages } from "@/lib/types";
 import { parseRawText } from "@/lib/parse-raw-text";
 import {
@@ -192,11 +193,16 @@ export async function POST(request: Request) {
     );
   }
 
-  // Ensure a profiles row exists (FK target for threads.author_id).
+  // Ensure a profiles row exists (FK target for threads.author_id)
+  // with Honest Start Props if this is a brand-new profile.
+  const startingBalance = getHonestStartBalance();
   const { error: profileError } = await supabase.from("profiles").upsert(
     {
       id: user.id,
       username: user.email?.split("@")[0] ?? null,
+      token_balance: startingBalance,
+      timezone: "UTC",
+      last_token_reset: new Date().toISOString(),
     },
     { onConflict: "id", ignoreDuplicates: true }
   );

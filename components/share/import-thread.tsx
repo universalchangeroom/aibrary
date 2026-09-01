@@ -48,7 +48,7 @@ const PRESET_TAGS = [
 const SOURCE_MODEL_MAP: Record<ImportedThread["source"], string> = {
   ChatGPT: "GPT-4o",
   Claude: "Claude 3.5 Sonnet",
-  DeepSeek: "DeepSeek",
+  DeepSeek: "DeepSeek-R1",
   Perplexity: "Other",
 };
 
