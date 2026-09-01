@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import { parseScreenshotBuffer } from "@/lib/parse-screenshot";
 
+/** Parses uploaded chat screenshots via Gemini vision (GEMINI_API_KEY, gemini-flash-latest). */
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 

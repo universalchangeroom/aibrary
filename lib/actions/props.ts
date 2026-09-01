@@ -2,10 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 
+import {
+  WEEKDAY_CAP,
+  asTokenBalance,
+  ensureViewerPropsBalance,
+  getLocalDayInfo,
+  normalizeTimezone,
+  type EnsuredProfile,
+} from "@/lib/props-balance";
 import { createClient } from "@/lib/supabase/server";
 
 type ActionResult =
-  | { success: true; message?: string }
+  | { success: true; message?: string; profile?: EnsuredProfile }
   | { success: false; error: string };
 
 type GivePropsResult =
@@ -21,59 +29,9 @@ type ToggleStarResult =
   | { success: true; starred: boolean }
   | { success: false; error: string };
 
-const WEEKDAY_CAP: Record<string, number> = {
-  Sun: 100,
-  Mon: 100,
-  Tue: 80,
-  Wed: 80,
-  Thu: 60,
-  Fri: 60,
-  Sat: 60,
-};
-
-function normalizeTimezone(tz: string | null): string {
-  const fallback = "UTC";
-  if (!tz || !tz.trim()) return fallback;
-
-  try {
-    // Throws for invalid timezone names.
-    Intl.DateTimeFormat("en-US", { timeZone: tz });
-    return tz;
-  } catch {
-    return fallback;
-  }
-}
-
-function getLocalDayInfo(date: Date, timeZone: string): {
-  dayKey: keyof typeof WEEKDAY_CAP;
-  dateKey: string;
-} {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "short",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-
-  const weekday = parts.find((p) => p.type === "weekday")?.value ?? "Sun";
-  const year = parts.find((p) => p.type === "year")?.value ?? "1970";
-  const month = parts.find((p) => p.type === "month")?.value ?? "01";
-  const day = parts.find((p) => p.type === "day")?.value ?? "01";
-
-  const dayKey =
-    weekday in WEEKDAY_CAP
-      ? (weekday as keyof typeof WEEKDAY_CAP)
-      : ("Sun" as const);
-
-  return {
-    dayKey,
-    dateKey: `${year}-${month}-${day}`,
-  };
-}
-
 /**
  * Applies weekly decay/reset rules to a user's Props balance.
+ * If the auth trigger never created a profiles row, upserts one with Honest Start.
  */
 export async function evaluatePropsDecay(userId: string): Promise<ActionResult> {
   if (!userId) {
@@ -81,18 +39,19 @@ export async function evaluatePropsDecay(userId: string): Promise<ActionResult> 
   }
 
   const supabase = await createClient();
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("token_balance, timezone, last_token_reset")
-    .eq("id", userId)
-    .single();
 
-  if (profileError || !profile) {
+  // Fallback when Supabase auth → profiles trigger fails silently.
+  const ensured = await ensureViewerPropsBalance(supabase, userId);
+  if (!ensured.profile || ensured.balance == null) {
     return {
       success: false,
-      error: profileError?.message || "Profile not found.",
+      error:
+        ("error" in ensured && ensured.error) ||
+        "Unable to load or create profile.",
     };
   }
+
+  let profile = ensured.profile;
 
   const timeZone = normalizeTimezone(profile.timezone);
   const now = new Date();
@@ -104,42 +63,85 @@ export async function evaluatePropsDecay(userId: string): Promise<ActionResult> 
     ? getLocalDayInfo(lastResetDate, timeZone)
     : null;
 
-  const currentBalance =
-    typeof profile.token_balance === "number" ? profile.token_balance : 0;
+  const currentBalance = asTokenBalance(profile.token_balance) ?? 0;
   const todayCap = WEEKDAY_CAP[nowInfo.dayKey];
 
   let nextBalance = currentBalance;
   let shouldUpdate = false;
 
-  // Sunday weekly top-up once per local Sunday.
+  // Sunday weekly top-up once per local Sunday (only grant day; never raise
+  // mid-week balances up to the weekday cap on page load).
   if (nowInfo.dayKey === "Sun") {
     if (lastResetInfo?.dateKey !== nowInfo.dateKey) {
       nextBalance = 100;
       shouldUpdate = true;
     }
   } else if (currentBalance > todayCap) {
-    // Non-Sunday cap decay.
+    // Cap DOWN only when over today's max (e.g. Mon 100 → Tue 80).
+    // Never top up a spent balance to the weekday cap.
     nextBalance = todayCap;
     shouldUpdate = true;
   }
 
   if (!shouldUpdate) {
-    return { success: true };
+    return { success: true, profile };
   }
 
-  const { error: updateError } = await supabase
-    .from("profiles")
-    .update({
-      token_balance: nextBalance,
-      last_token_reset: new Date().toISOString(),
-    })
-    .eq("id", userId);
+  const nowIso = new Date().toISOString();
+  // Service role: user-scoped UPDATE can silently affect 0 rows under RLS.
+  let updated: {
+    id: string;
+    token_balance: number | null;
+    timezone: string | null;
+    last_token_reset: string | null;
+    auto_unstar: boolean | null;
+  } | null = null;
+  let updateError: { message: string } | null = null;
+
+  try {
+    const { createServiceClient } = await import("@/lib/supabase/admin");
+    const admin = createServiceClient();
+    const result = await admin
+      .from("profiles")
+      .update({
+        token_balance: nextBalance,
+        last_token_reset: nowIso,
+      })
+      .eq("id", userId)
+      .select("id, token_balance, timezone, last_token_reset, auto_unstar")
+      .maybeSingle();
+    updated = result.data;
+    updateError = result.error;
+  } catch (err) {
+    updateError = {
+      message:
+        err instanceof Error
+          ? err.message
+          : "Service role is required to apply Props decay.",
+    };
+  }
 
   if (updateError) {
     return { success: false, error: updateError.message };
   }
 
-  return { success: true };
+  if (!updated) {
+    return {
+      success: false,
+      error: "Failed to update Props balance (no profile row updated).",
+    };
+  }
+
+  profile = {
+    id: userId,
+    token_balance: asTokenBalance(updated.token_balance) ?? nextBalance,
+    timezone: (updated?.timezone as string | null) ?? profile.timezone,
+    last_token_reset:
+      (updated?.last_token_reset as string | null) ?? nowIso,
+    auto_unstar: (updated?.auto_unstar as boolean | null) ?? profile.auto_unstar,
+  };
+
+  return { success: true, profile };
 }
 
 /**
@@ -189,20 +191,22 @@ export async function giveProps(
     };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("token_balance, auto_unstar")
-    .eq("id", user.id)
-    .single();
-
-  if (profileError || !profile) {
-    return {
-      success: false,
-      error: profileError?.message || "Unable to load your token balance.",
-    };
+  // Prefer profile returned from decay/ensure so we never fail on a missing row.
+  let profile = decayResult.profile;
+  if (!profile) {
+    const ensured = await ensureViewerPropsBalance(supabase, user.id);
+    if (!ensured.profile) {
+      return {
+        success: false,
+        error:
+          ("error" in ensured && ensured.error) ||
+          "Unable to load your token balance.",
+      };
+    }
+    profile = ensured.profile;
   }
 
-  const balance = typeof profile.token_balance === "number" ? profile.token_balance : 0;
+  const balance = asTokenBalance(profile.token_balance) ?? 0;
   if (amount > balance) {
     return { success: false, error: "Insufficient Props balance." };
   }
@@ -212,21 +216,107 @@ export async function giveProps(
     typeof thread.total_tokens === "number" ? thread.total_tokens : 0;
   const nextTotal = threadTotal + amount;
 
-  const { error: deductError } = await supabase
-    .from("profiles")
-    .update({ token_balance: nextBalance })
-    .eq("id", user.id);
+  // Profile token_balance UPDATE can silently affect 0 rows under RLS
+  // (same class of failure that blocked thread total_tokens for givers).
+  // Use the service role and require a returned row with the DB balance.
+  let deductError: { message: string } | null = null;
+  let remainingBalance: number | null = null;
+  let admin: ReturnType<
+    typeof import("@/lib/supabase/admin").createServiceClient
+  > | null = null;
 
-  if (deductError) {
-    return { success: false, error: deductError.message };
+  try {
+    const { createServiceClient } = await import("@/lib/supabase/admin");
+    admin = createServiceClient();
+    const { data: updatedProfile, error } = await admin
+      .from("profiles")
+      .update({ token_balance: nextBalance })
+      .eq("id", user.id)
+      .select("id, token_balance")
+      .maybeSingle();
+
+    const dbBalance = asTokenBalance(updatedProfile?.token_balance);
+
+    console.log("[giveProps] profile deduct", {
+      userId: user.id,
+      startingBalance: balance,
+      amount,
+      nextBalance,
+      updatedProfile,
+      dbBalance,
+      error: error?.message ?? null,
+    });
+
+    if (error) {
+      deductError = error;
+    } else if (!updatedProfile) {
+      deductError = {
+        message: "Failed to deduct Props (no profile row updated).",
+      };
+    } else if (dbBalance == null) {
+      deductError = {
+        message: "Failed to deduct Props (DB returned a non-numeric balance).",
+      };
+    } else if (dbBalance !== nextBalance) {
+      deductError = {
+        message: `Props deduct mismatch: expected ${nextBalance}, DB returned ${dbBalance}.`,
+      };
+    } else {
+      remainingBalance = dbBalance;
+    }
+  } catch (err) {
+    deductError = {
+      message:
+        err instanceof Error
+          ? err.message
+          : "Service role is required to deduct Props.",
+    };
   }
 
-  const { error: addError } = await supabase
-    .from("threads")
-    .update({ total_tokens: nextTotal })
-    .eq("id", threadId);
+  if (deductError || remainingBalance == null) {
+    return {
+      success: false,
+      error: deductError?.message || "Failed to deduct Props.",
+    };
+  }
+
+  // Authors-only UPDATE RLS blocks givers from bumping total_tokens.
+  // Use the service role for this column increment only.
+  let addError: { message: string } | null = null;
+  try {
+    if (!admin) {
+      const { createServiceClient } = await import("@/lib/supabase/admin");
+      admin = createServiceClient();
+    }
+    const { data: updatedThread, error } = await admin
+      .from("threads")
+      .update({ total_tokens: nextTotal })
+      .eq("id", threadId)
+      .select("id, total_tokens")
+      .maybeSingle();
+
+    if (error) {
+      addError = error;
+    } else if (!updatedThread) {
+      addError = { message: "Failed to update thread Props total." };
+    }
+  } catch (err) {
+    addError = {
+      message:
+        err instanceof Error
+          ? err.message
+          : "Service role is required to credit thread Props.",
+    };
+  }
 
   if (addError) {
+    // Rollback giver balance with service role so we do not leave a partial spend.
+    if (admin) {
+      await admin
+        .from("profiles")
+        .update({ token_balance: balance })
+        .eq("id", user.id);
+    }
     return { success: false, error: addError.message };
   }
 
@@ -251,12 +341,26 @@ export async function giveProps(
     }
   }
 
-  revalidatePath(`/feed/${threadId}`);
+  // Refresh layout (header balance) + feed/thread/portfolio surfaces.
+  revalidatePath("/", "layout");
+  revalidatePath("/");
   revalidatePath("/feed");
+  revalidatePath(`/feed/${threadId}`);
+  revalidatePath(`/user/${user.id}`);
+  if (thread.author_id) {
+    revalidatePath(`/user/${thread.author_id}`);
+  }
+
+  console.log("[giveProps] success", {
+    userId: user.id,
+    remainingBalance,
+    totalTokens: nextTotal,
+  });
 
   return {
     success: true,
-    remainingBalance: nextBalance,
+    // Always the value returned by the service-role SELECT after UPDATE.
+    remainingBalance,
     totalTokens: nextTotal,
   };
 }

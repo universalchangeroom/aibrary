@@ -1,6 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+function fetchNoStore(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  return fetch(input, { ...init, cache: "no-store" });
+}
+
 /**
  * Refreshes the Supabase Auth session from cookies and returns a response
  * that carries any updated auth cookies. Also redirects unauthenticated
@@ -15,6 +22,9 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: {
+        fetch: fetchNoStore,
+      },
       cookies: {
         getAll() {
           return request.cookies.getAll();

@@ -15,6 +15,11 @@ create table public.profiles (
   id uuid not null primary key references auth.users (id) on delete cascade,
   username text unique,
   reputation_score integer not null default 0,
+  -- Honest Start / weekly Props balance (set by handle_new_user + decay rules)
+  token_balance integer not null default 60,
+  timezone text not null default 'UTC',
+  last_token_reset timestamptz,
+  auto_unstar boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
 
@@ -30,9 +35,37 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  current_dow integer;
+  starting_balance integer;
 begin
-  insert into public.profiles (id, username)
-  values (new.id, new.raw_user_meta_data ->> 'username');
+  -- 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  current_dow := extract(dow from now());
+
+  -- Honest Start balance based on Generosification weekly schedule.
+  if current_dow in (0, 1) then
+    starting_balance := 100;
+  elsif current_dow in (2, 3) then
+    starting_balance := 80;
+  else
+    starting_balance := 60;
+  end if;
+
+  insert into public.profiles (
+    id,
+    username,
+    token_balance,
+    timezone,
+    last_token_reset
+  )
+  values (
+    new.id,
+    new.raw_user_meta_data ->> 'username',
+    starting_balance,
+    'UTC',
+    now()
+  );
+
   return new;
 end;
 $$;

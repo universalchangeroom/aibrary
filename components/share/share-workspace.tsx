@@ -7,6 +7,7 @@ import { ClipboardPaste, X } from "lucide-react";
 import { BookmarkletCard } from "@/components/import/bookmarklet-card";
 import { ImportThread } from "@/components/share/import-thread";
 import { ShareForm } from "@/components/share/share-form";
+import { ShareScreenshotForm } from "@/components/share/share-screenshot-form";
 import {
   Card,
   CardContent,
@@ -16,17 +17,21 @@ import {
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-type ShareTab = "import" | "paste";
+type ShareTab = "import" | "paste" | "screenshot";
+
+const SHARE_TAB_LIST_CLASS =
+  "flex h-auto min-h-10 w-full flex-wrap items-stretch gap-1 bg-muted p-1 [&>button]:h-auto [&>button]:min-w-[5.5rem] [&>button]:flex-1 [&>button]:whitespace-normal [&>button]:px-2 [&>button]:py-1.5 [&>button]:text-xs sm:[&>button]:text-sm";
 
 /**
  * Share UI with paste-hint banner for the clipboard bookmarklet flow
- * (?paste=1&source=Gemini from bookmarklet).
+ * (?paste=1&source=Gemini&model=… from bookmarklet).
  */
 export function ShareWorkspace() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pasteFlag = searchParams.get("paste") === "1";
   const sourceParam = searchParams.get("source")?.trim() || "";
+  const modelParam = searchParams.get("model")?.trim() || "";
 
   const [tab, setTab] = useState<ShareTab>(pasteFlag ? "paste" : "import");
   const [showPasteBanner, setShowPasteBanner] = useState(pasteFlag);
@@ -40,15 +45,25 @@ export function ShareWorkspace() {
         if (sourceParam) {
           sessionStorage.setItem("chatshare_paste_source", sourceParam);
         }
+        if (modelParam) {
+          sessionStorage.setItem("chatshare_paste_model", modelParam);
+        } else {
+          sessionStorage.removeItem("chatshare_paste_model");
+        }
       } catch {
         // ignore
       }
     }
-  }, [pasteFlag, sourceParam]);
+  }, [pasteFlag, sourceParam, modelParam]);
 
   // When user switches to Paste transcript after bookmarklet open
   function handleTabChange(value: string) {
-    const next = value === "paste" ? "paste" : "import";
+    const next: ShareTab =
+      value === "paste"
+        ? "paste"
+        : value === "screenshot"
+          ? "screenshot"
+          : "import";
     setTab(next);
     if (next === "paste" && pasteFlag) {
       setShowPasteBanner(true);
@@ -60,6 +75,7 @@ export function ShareWorkspace() {
     try {
       sessionStorage.removeItem("chatshare_expect_paste");
       sessionStorage.removeItem("chatshare_paste_source");
+      sessionStorage.removeItem("chatshare_paste_model");
     } catch {
       // ignore
     }
@@ -67,11 +83,13 @@ export function ShareWorkspace() {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("paste");
     params.delete("source");
+    params.delete("model");
     const q = params.toString();
     router.replace(q ? `/share?${q}` : "/share");
   }
 
-  const sourceLabel = sourceParam || "Gemini";
+  const sourceLabel = sourceParam || "AI";
+  const modelHint = modelParam ? ` (${modelParam})` : "";
 
   return (
     <div className="flex w-full flex-col gap-6">
@@ -82,7 +100,8 @@ export function ShareWorkspace() {
         >
           <ClipboardPaste className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-300" />
           <p className="flex-1 leading-relaxed">
-            Conversation copied from {sourceLabel}! Press{" "}
+            Conversation copied from {sourceLabel}
+            {modelHint}! Press{" "}
             <kbd className="rounded border border-indigo-300 bg-white/80 px-1.5 py-0.5 font-mono text-xs dark:border-indigo-700 dark:bg-indigo-900/60">
               Ctrl+V
             </kbd>{" "}
@@ -104,9 +123,10 @@ export function ShareWorkspace() {
       ) : null}
 
       <Tabs value={tab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className={SHARE_TAB_LIST_CLASS}>
           <TabsTrigger value="import">Import link</TabsTrigger>
           <TabsTrigger value="paste">Paste transcript</TabsTrigger>
+          <TabsTrigger value="screenshot">Screenshot</TabsTrigger>
         </TabsList>
 
         <TabsContent value="import" className="mt-6 space-y-6">
@@ -129,6 +149,21 @@ export function ShareWorkspace() {
             </CardContent>
           </Card>
           <BookmarkletCard />
+        </TabsContent>
+
+        <TabsContent value="screenshot" className="mt-6 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-xl">Upload screenshot</CardTitle>
+              <CardDescription>
+                Drop a mobile scrolling chat screenshot to extract turns with a
+                vision model, then review and publish.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ShareScreenshotForm />
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

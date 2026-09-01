@@ -113,6 +113,17 @@ export async function POST(request: Request) {
           source = "DeepSeek";
         } else if (host.includes("gemini.google")) {
           source = "Gemini";
+        } else if (host.includes("perplexity.ai")) {
+          source = "Perplexity";
+        } else if (host.includes("copilot.microsoft") || host.includes("copilot.cloud.microsoft")) {
+          source = "Copilot";
+        } else if (
+          host === "x.com" ||
+          host === "www.x.com" ||
+          host.includes("grok.com") ||
+          host.includes("grok.x.ai")
+        ) {
+          source = "Grok";
         }
       } catch {
         // ignore invalid pageUrl
@@ -127,6 +138,12 @@ export async function POST(request: Request) {
     }
     if (source === "Claude" && title === "Imported Thread") {
       title = "Imported Claude Thread";
+    }
+    if (source === "Perplexity" && title === "Imported Thread") {
+      title = "Imported Perplexity Thread";
+    }
+    if (source === "ChatGPT" && title === "Imported Thread") {
+      title = "Imported ChatGPT Thread";
     }
 
     return json(

@@ -37,7 +37,7 @@ export function buildImportBookmarklet(appOrigin?: string): string {
   const origin = resolveChatShareOrigin(appOrigin);
   // Compact, ES5-friendly payload (bookmarklet URL length limits).
   // HTML → Markdown so paste/parse keeps structure for ChatShare editors.
-  // `O` is the live ChatShare origin; dest = O + "/share?paste=1&source=…"
+  // `O` is the live ChatShare origin; dest = O + "/share?paste=1&source=…&model=…"
   const code = `(function(){
 var O=${JSON.stringify(origin)};
 function host(){return(location.hostname||"").toLowerCase();}
@@ -333,7 +333,7 @@ think=n.querySelector(".ds-think-content");
 thinkTxt=think?cleanChrome(htmlToMd(think)||(think.innerText||"")):"";
 if(main||thinkTxt){
 block="";
-if(thinkTxt)block+="Thought process:\\n"+thinkTxt+"\\n\\n";
+if(thinkTxt)block+="<think>\\n"+thinkTxt+"\\n</think>\\n\\n";
 if(main){txt=cleanChrome(htmlToMd(main));if(txt)block+=txt;}
 if(block)parts.push("DeepSeek:\\n"+block);
 }else{
@@ -624,13 +624,84 @@ if(t)return t;
 var main=document.querySelector("main")||document.body;
 return cleanChrome(htmlToMd(main)||((document.body&&document.body.innerText)||""));
 }
+function elText(el){
+if(!el)return"";
+return String(el.innerText||el.textContent||"").replace(/\\s+/g," ").replace(/^\\s+|\\s+$/g,"");
+}
+/** Domain → platform label for import "Model / Source". */
 function sourceName(){
 var h=host();
-if(h.indexOf("gemini")>=0)return"Gemini";
-if(h.indexOf("deepseek")>=0)return"DeepSeek";
-if(h.indexOf("claude")>=0)return"Claude";
-if(h.indexOf("chatgpt")>=0||h.indexOf("openai")>=0)return"ChatGPT";
-return"chat";
+if(h==="chatgpt.com"||h==="www.chatgpt.com"||h==="chat.openai.com"||h==="www.chat.openai.com"||h.indexOf(".chatgpt.com")>=0||h.indexOf("chat.openai.com")>=0)return"ChatGPT";
+if(h==="gemini.google.com"||h==="www.gemini.google.com"||h.indexOf("gemini.google.com")>=0)return"Gemini";
+if(h==="chat.deepseek.com"||h==="www.chat.deepseek.com"||h.indexOf("chat.deepseek.com")>=0||h.indexOf("deepseek.com")>=0)return"DeepSeek";
+if(h==="claude.ai"||h==="www.claude.ai"||h.slice(-10)===".claude.ai")return"Claude";
+if(h==="perplexity.ai"||h==="www.perplexity.ai"||h.indexOf("perplexity.ai")>=0)return"Perplexity";
+if(h==="copilot.microsoft.com"||h==="www.copilot.microsoft.com"||h.indexOf("copilot.microsoft.com")>=0||h==="copilot.cloud.microsoft"||h.indexOf("copilot.cloud.microsoft")>=0)return"Copilot";
+if(h==="grok.com"||h==="www.grok.com"||h.indexOf("grok.com")>=0||h==="grok.x.ai"||h==="x.com"||h==="www.x.com"||h==="twitter.com"||h==="www.twitter.com")return"Grok";
+var d=h.replace(/^www\\./,"");
+return d||"AI";
+}
+/**
+ * Best-effort active model from the page chrome (model switcher, DeepThink, etc.).
+ */
+function detectModel(platform){
+var i,el,t,cands,nodes;
+try{
+if(platform==="ChatGPT"){
+cands=document.querySelectorAll('[data-testid="model-switcher-dropdown-button"],[data-testid="model-switcher"],button[aria-haspopup="menu"]');
+for(i=0;i<cands.length;i++){
+t=elText(cands[i]);
+if(t&&t.length<90&&/GPT|o1|o3|o4|ChatGPT|mini/i.test(t))return t;
+}
+nodes=document.querySelectorAll("button");
+for(i=0;i<nodes.length;i++){
+t=elText(nodes[i]);
+if(t&&t.length<48&&/^(GPT-4o|GPT-4\\.1|o1|o3|o4-mini|ChatGPT)/i.test(t))return t;
+}
+}
+if(platform==="DeepSeek"){
+cands=document.querySelectorAll("button,[role='button'],.ds-button,[class*='ds-button']");
+for(i=0;i<cands.length;i++){
+t=elText(cands[i]);
+if(!t||t.length>80)continue;
+if(/DeepThink|R1/i.test(t))return"DeepSeek-R1";
+if(/^DeepSeek/i.test(t))return t;
+}
+}
+if(platform==="Claude"){
+cands=document.querySelectorAll('button,[data-testid*="model"],[aria-label*="model" i]');
+for(i=0;i<cands.length;i++){
+t=elText(cands[i]);
+if(t&&t.length<90&&/Claude|Sonnet|Opus|Haiku/i.test(t))return t;
+}
+}
+if(platform==="Gemini"){
+cands=document.querySelectorAll('button,[data-test-id*="model"],[data-testid*="model"],[aria-label*="Gemini" i]');
+for(i=0;i<cands.length;i++){
+t=elText(cands[i]);
+if(t&&t.length<90&&/Gemini|Flash|Pro|Ultra/i.test(t))return t;
+}
+}
+if(platform==="Perplexity"){
+cands=document.querySelectorAll("button,[role='button']");
+for(i=0;i<cands.length;i++){
+t=elText(cands[i]);
+if(t&&t.length<70&&/Sonar|GPT|Claude|Gemini|Perplexity|Model/i.test(t))return t;
+}
+}
+if(platform==="Copilot"){
+return"Copilot";
+}
+if(platform==="Grok"){
+cands=document.querySelectorAll("button,[role='button']");
+for(i=0;i<cands.length;i++){
+t=elText(cands[i]);
+if(t&&t.length<70&&/Grok/i.test(t))return t;
+}
+return"Grok 2";
+}
+}catch(err){}
+return"";
 }
 function copyText(text){
 if(navigator.clipboard&&navigator.clipboard.writeText){
@@ -654,7 +725,10 @@ if(ok)resolve();else reject(new Error("copy failed"));
 var t=pageText();
 Promise.resolve(t).then(function(text){
 if(!text||!String(text).replace(/^\\s+|\\s+$/g,"")){alert("No readable text on this page.");return;}
-var dest=O+"/share?paste=1&source="+encodeURIComponent(sourceName());
+var src=sourceName();
+var model=detectModel(src);
+var dest=O+"/share?paste=1&source="+encodeURIComponent(src);
+if(model)dest+="&model="+encodeURIComponent(model);
 return copyText(text).then(function(){
 window.open(dest,"_blank");
 }).catch(function(){

@@ -8,8 +8,8 @@ export default function SharePage() {
       <header className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">Share a Chat</h1>
         <p className="text-muted-foreground">
-          Import a public share link, or paste a raw transcript, then publish to
-          the ChatShare feed.
+          Import a public share link, paste a raw transcript, or upload a mobile
+          chat screenshot, then publish to the ChatShare feed.
         </p>
       </header>
 

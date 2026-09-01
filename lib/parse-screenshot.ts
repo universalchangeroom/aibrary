@@ -1,7 +1,9 @@
 /**
  * Server-side vision extraction for mobile chat scrolling screenshots.
- * Requires OPENAI_API_KEY (uses gpt-4o-mini by default).
+ * Requires GEMINI_API_KEY (uses gemini-flash-latest by default).
  */
+
+import { GoogleGenAI, Type } from "@google/genai";
 
 export type ScreenshotParseResult = {
   title: string;
@@ -28,6 +30,44 @@ Return ONLY valid JSON with this exact shape:
     { "role": "user" | "assistant", "content": "markdown string" }
   ]
 }`;
+
+const RESPONSE_JSON_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    title: {
+      type: Type.STRING,
+      description: "Short descriptive title for the thread",
+    },
+    source: {
+      type: Type.STRING,
+      description:
+        'Identified chat app: "ChatGPT", "Claude", "Gemini", "DeepSeek", or "Screenshot"',
+    },
+    messages: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          role: {
+            type: Type.STRING,
+            description: 'Either "user" or "assistant"',
+          },
+          content: {
+            type: Type.STRING,
+            description: "Markdown transcript for this turn",
+          },
+        },
+        required: ["role", "content"],
+        propertyOrdering: ["role", "content"],
+      },
+    },
+  },
+  required: ["title", "messages"],
+  propertyOrdering: ["title", "source", "messages"],
+} as const;
+
+/** Google's auto-updating Flash alias — no pinned version numbers. */
+const DEFAULT_MODEL = "gemini-flash-latest";
 
 const ALLOWED_MIME = new Set([
   "image/png",
@@ -61,10 +101,24 @@ function sanitizeContent(text: string): string {
     .trim();
 }
 
+function extractJsonPayload(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("{")) {
+    return trimmed;
+  }
+
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)```$/i);
+  if (fenced?.[1]) {
+    return fenced[1].trim();
+  }
+
+  return trimmed;
+}
+
 function parseVisionJson(raw: string): ScreenshotParseResult {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(extractJsonPayload(raw));
   } catch {
     throw new Error("Vision model returned invalid JSON.");
   }
@@ -122,7 +176,7 @@ export function assertScreenshotSize(byteLength: number): void {
 }
 
 /**
- * Send an image buffer to a lightweight multimodal model and return structured turns.
+ * Send an image buffer to Gemini and return structured turns.
  */
 export async function parseScreenshotBuffer(
   buffer: Buffer,
@@ -131,65 +185,53 @@ export async function parseScreenshotBuffer(
   assertScreenshotMime(mimeType);
   assertScreenshotSize(buffer.length);
 
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     throw new Error(
-      "Screenshot import is not configured. Set OPENAI_API_KEY on the server."
+      "Screenshot import is not configured. Set GEMINI_API_KEY on the server."
     );
   }
 
   const model =
-    process.env.OPENAI_VISION_MODEL?.trim() || "gpt-4o-mini";
-  const normalizedMime = mimeType.toLowerCase().split(";")[0]?.trim() ?? "image/png";
+    process.env.GEMINI_VISION_MODEL?.trim() || DEFAULT_MODEL;
+  const normalizedMime =
+    mimeType.toLowerCase().split(";")[0]?.trim() ?? "image/png";
   const base64 = buffer.toString("base64");
-  const dataUrl = `data:${normalizedMime};base64,${base64}`;
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+  const ai = new GoogleGenAI({ apiKey });
+
+  try {
+    const response = await ai.models.generateContent({
       model,
-      response_format: { type: "json_object" },
-      temperature: 0.1,
-      max_tokens: 4096,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+      contents: [
         {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Extract the full conversation from this mobile chat screenshot.",
-            },
-            {
-              type: "image_url",
-              image_url: { url: dataUrl, detail: "high" },
-            },
-          ],
+          inlineData: {
+            mimeType: normalizedMime,
+            data: base64,
+          },
+        },
+        {
+          text: "Extract the full conversation from this mobile chat screenshot.",
         },
       ],
-    }),
-  });
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        temperature: 0.1,
+        responseMimeType: "application/json",
+        responseJsonSchema: RESPONSE_JSON_SCHEMA,
+      },
+    });
 
-  const payload = (await response.json().catch(() => null)) as {
-    error?: { message?: string };
-    choices?: Array<{ message?: { content?: string } }>;
-  } | null;
+    const content = response.text;
+    if (typeof content !== "string" || !content.trim()) {
+      throw new Error("Vision model returned an empty response.");
+    }
 
-  if (!response.ok) {
-    const detail =
-      payload?.error?.message ||
-      `Vision API request failed (${response.status}).`;
-    throw new Error(detail);
+    return parseVisionJson(content);
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Vision API request failed.");
   }
-
-  const content = payload?.choices?.[0]?.message?.content;
-  if (typeof content !== "string" || !content.trim()) {
-    throw new Error("Vision model returned an empty response.");
-  }
-
-  return parseVisionJson(content);
 }
