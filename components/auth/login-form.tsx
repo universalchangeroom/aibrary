@@ -4,6 +4,11 @@ import { useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
+import {
+  ForgotPasswordPanel,
+  requestPasswordReset,
+  validateAuthEmail,
+} from "@/components/auth/forgot-password-panel";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -18,13 +23,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
 
 type AuthMode = "signin" | "signup";
+type AuthView = AuthMode | "forgot";
 
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") || "/feed";
 
-  const [mode, setMode] = useState<AuthMode>("signin");
+  const [view, setView] = useState<AuthView>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +47,7 @@ export function LoginForm() {
     const trimmedEmail = email.trim();
 
     try {
-      if (mode === "signin") {
+      if (view === "signin") {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email: trimmedEmail,
           password,
@@ -74,7 +80,7 @@ export function LoginForm() {
       setInfo(
         "Account created. Check your email to confirm your address, then sign in."
       );
-      setMode("signin");
+      setView("signin");
       setIsSubmitting(false);
     } catch (err) {
       const message =
@@ -84,56 +90,107 @@ export function LoginForm() {
     }
   }
 
+  async function handleForgotPassword() {
+    setError(null);
+    setInfo(null);
+
+    const validationError = validateAuthEmail(email);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await requestPasswordReset(email);
+      setInfo("Check your email for the reset link.");
+      setIsSubmitting(false);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not send reset email.";
+      setError(message);
+      setIsSubmitting(false);
+    }
+  }
+
+  const mode = view === "forgot" ? "signin" : view;
+
   return (
     <Card className="w-full max-w-md">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl">Welcome to ChatShare</CardTitle>
+        <CardTitle className="text-2xl">
+          {view === "forgot" ? "Reset your password" : "Welcome to ChatShare"}
+        </CardTitle>
         <CardDescription>
-          Sign in or create an account to publish your AI conversations.
+          {view === "forgot"
+            ? "Enter your email and we will send you a link to choose a new password."
+            : "Sign in or create an account to publish your AI conversations."}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Tabs
-          value={mode}
-          onValueChange={(value) => {
-            setMode(value as AuthMode);
-            setError(null);
-            setInfo(null);
-          }}
-        >
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="signin">Sign In</TabsTrigger>
-            <TabsTrigger value="signup">Create Account</TabsTrigger>
-          </TabsList>
+        {view === "forgot" ? (
+          <ForgotPasswordPanel
+            email={email}
+            error={error}
+            info={info}
+            isSubmitting={isSubmitting}
+            onEmailChange={setEmail}
+            onSubmit={() => void handleForgotPassword()}
+            onBack={() => {
+              setView("signin");
+              setError(null);
+              setInfo(null);
+            }}
+          />
+        ) : (
+          <Tabs
+            value={mode}
+            onValueChange={(value) => {
+              setView(value as AuthMode);
+              setError(null);
+              setInfo(null);
+            }}
+          >
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="signin">Sign In</TabsTrigger>
+              <TabsTrigger value="signup">Create Account</TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="signin" className="mt-6">
-            <AuthFields
-              mode="signin"
-              email={email}
-              password={password}
-              error={error}
-              info={info}
-              isSubmitting={isSubmitting}
-              onEmailChange={setEmail}
-              onPasswordChange={setPassword}
-              onSubmit={handleSubmit}
-            />
-          </TabsContent>
+            <TabsContent value="signin" className="mt-6">
+              <AuthFields
+                mode="signin"
+                email={email}
+                password={password}
+                error={error}
+                info={info}
+                isSubmitting={isSubmitting}
+                onEmailChange={setEmail}
+                onPasswordChange={setPassword}
+                onSubmit={handleSubmit}
+                onForgotPassword={() => {
+                  setView("forgot");
+                  setError(null);
+                  setInfo(null);
+                }}
+              />
+            </TabsContent>
 
-          <TabsContent value="signup" className="mt-6">
-            <AuthFields
-              mode="signup"
-              email={email}
-              password={password}
-              error={error}
-              info={info}
-              isSubmitting={isSubmitting}
-              onEmailChange={setEmail}
-              onPasswordChange={setPassword}
-              onSubmit={handleSubmit}
-            />
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="signup" className="mt-6">
+              <AuthFields
+                mode="signup"
+                email={email}
+                password={password}
+                error={error}
+                info={info}
+                isSubmitting={isSubmitting}
+                onEmailChange={setEmail}
+                onPasswordChange={setPassword}
+                onSubmit={handleSubmit}
+              />
+            </TabsContent>
+          </Tabs>
+        )}
       </CardContent>
     </Card>
   );
@@ -149,6 +206,7 @@ interface AuthFieldsProps {
   onEmailChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onForgotPassword?: () => void;
 }
 
 function AuthFields({
@@ -161,6 +219,7 @@ function AuthFields({
   onEmailChange,
   onPasswordChange,
   onSubmit,
+  onForgotPassword,
 }: AuthFieldsProps) {
   return (
     <form onSubmit={onSubmit} className="space-y-4">
@@ -173,12 +232,25 @@ function AuthFields({
           value={email}
           onChange={(event) => onEmailChange(event.target.value)}
           placeholder="you@example.com"
+          disabled={isSubmitting}
           required
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor={`${mode}-password`}>Password</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor={`${mode}-password`}>Password</Label>
+          {mode === "signin" && onForgotPassword ? (
+            <button
+              type="button"
+              className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              onClick={onForgotPassword}
+              disabled={isSubmitting}
+            >
+              Forgot password?
+            </button>
+          ) : null}
+        </div>
         <Input
           id={`${mode}-password`}
           type="password"
@@ -187,6 +259,7 @@ function AuthFields({
           onChange={(event) => onPasswordChange(event.target.value)}
           placeholder="••••••••"
           minLength={6}
+          disabled={isSubmitting}
           required
         />
       </div>

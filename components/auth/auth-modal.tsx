@@ -4,6 +4,11 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
+import {
+  ForgotPasswordPanel,
+  requestPasswordReset,
+  validateAuthEmail,
+} from "@/components/auth/forgot-password-panel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
 
 type AuthMode = "signin" | "signup";
+type AuthView = AuthMode | "forgot";
 
 interface AuthModalProps {
   open: boolean;
@@ -34,12 +40,8 @@ interface AuthModalProps {
 }
 
 function validateCredentials(email: string, password: string): string | null {
-  if (!email.trim()) {
-    return "Please enter your email address.";
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-    return "Please enter a valid email address.";
-  }
+  const emailError = validateAuthEmail(email);
+  if (emailError) return emailError;
   if (!password) {
     return "Please enter your password.";
   }
@@ -57,7 +59,7 @@ export function AuthModal({
   onSuccess,
 }: AuthModalProps) {
   const router = useRouter();
-  const [mode, setMode] = useState<AuthMode>(defaultMode);
+  const [view, setView] = useState<AuthView>(defaultMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +72,7 @@ export function AuthModal({
     setError(null);
     setInfo(null);
     setIsSubmitting(false);
-    setMode(defaultMode);
+    setView(defaultMode);
   }
 
   function finishSuccessfully() {
@@ -99,7 +101,7 @@ export function AuthModal({
     const trimmedEmail = email.trim();
 
     try {
-      if (mode === "signin") {
+      if (view === "signin") {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email: trimmedEmail,
           password,
@@ -128,16 +130,41 @@ export function AuthModal({
       }
 
       setInfo("Check your email for a confirmation link, then sign in.");
-      setMode("signin");
+      setView("signin");
       setIsSubmitting(false);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Authentication failed.";
-      // Supabase often returns "Invalid login credentials"
       setError(message);
       setIsSubmitting(false);
     }
   }
+
+  async function handleForgotPassword() {
+    setError(null);
+    setInfo(null);
+
+    const validationError = validateAuthEmail(email);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await requestPasswordReset(email);
+      setInfo("Check your email for the reset link.");
+      setIsSubmitting(false);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not send reset email.";
+      setError(message);
+      setIsSubmitting(false);
+    }
+  }
+
+  const mode = view === "forgot" ? "signin" : view;
 
   return (
     <Dialog
@@ -152,60 +179,87 @@ export function AuthModal({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {mode === "signin" ? "Welcome back" : "Create your account"}
+            {view === "forgot"
+              ? "Reset your password"
+              : mode === "signin"
+                ? "Welcome back"
+                : "Create your account"}
           </DialogTitle>
           <DialogDescription>
-            {mode === "signin"
-              ? "Sign in with your email and password to publish threads and vote."
-              : "Sign up to share AI conversations and annotate the feed."}
+            {view === "forgot"
+              ? "Enter your email and we will send you a link to choose a new password."
+              : mode === "signin"
+                ? "Sign in with your email and password to publish threads and vote."
+                : "Sign up to share AI conversations and annotate the feed."}
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs
-          value={mode}
-          onValueChange={(value) => {
-            setMode(value as AuthMode);
-            setError(null);
-            setInfo(null);
-          }}
-        >
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="signin" disabled={isSubmitting}>
-              Sign In
-            </TabsTrigger>
-            <TabsTrigger value="signup" disabled={isSubmitting}>
-              Sign Up
-            </TabsTrigger>
-          </TabsList>
+        {view === "forgot" ? (
+          <ForgotPasswordPanel
+            email={email}
+            error={error}
+            info={info}
+            isSubmitting={isSubmitting}
+            onEmailChange={setEmail}
+            onSubmit={() => void handleForgotPassword()}
+            onBack={() => {
+              setView("signin");
+              setError(null);
+              setInfo(null);
+            }}
+          />
+        ) : (
+          <Tabs
+            value={mode}
+            onValueChange={(value) => {
+              setView(value as AuthMode);
+              setError(null);
+              setInfo(null);
+            }}
+          >
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="signin" disabled={isSubmitting}>
+                Sign In
+              </TabsTrigger>
+              <TabsTrigger value="signup" disabled={isSubmitting}>
+                Sign Up
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="signin" className="mt-4">
-            <AuthFields
-              mode="signin"
-              email={email}
-              password={password}
-              error={error}
-              info={info}
-              isSubmitting={isSubmitting}
-              onEmailChange={setEmail}
-              onPasswordChange={setPassword}
-              onSubmit={handleSubmit}
-            />
-          </TabsContent>
+            <TabsContent value="signin" className="mt-4">
+              <AuthFields
+                mode="signin"
+                email={email}
+                password={password}
+                error={error}
+                info={info}
+                isSubmitting={isSubmitting}
+                onEmailChange={setEmail}
+                onPasswordChange={setPassword}
+                onSubmit={handleSubmit}
+                onForgotPassword={() => {
+                  setView("forgot");
+                  setError(null);
+                  setInfo(null);
+                }}
+              />
+            </TabsContent>
 
-          <TabsContent value="signup" className="mt-4">
-            <AuthFields
-              mode="signup"
-              email={email}
-              password={password}
-              error={error}
-              info={info}
-              isSubmitting={isSubmitting}
-              onEmailChange={setEmail}
-              onPasswordChange={setPassword}
-              onSubmit={handleSubmit}
-            />
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="signup" className="mt-4">
+              <AuthFields
+                mode="signup"
+                email={email}
+                password={password}
+                error={error}
+                info={info}
+                isSubmitting={isSubmitting}
+                onEmailChange={setEmail}
+                onPasswordChange={setPassword}
+                onSubmit={handleSubmit}
+              />
+            </TabsContent>
+          </Tabs>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -221,6 +275,7 @@ interface AuthFieldsProps {
   onEmailChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onForgotPassword?: () => void;
 }
 
 function AuthFields({
@@ -233,6 +288,7 @@ function AuthFields({
   onEmailChange,
   onPasswordChange,
   onSubmit,
+  onForgotPassword,
 }: AuthFieldsProps) {
   return (
     <form onSubmit={onSubmit} className="space-y-4">
@@ -251,7 +307,19 @@ function AuthFields({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor={`auth-modal-${mode}-password`}>Password</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor={`auth-modal-${mode}-password`}>Password</Label>
+          {mode === "signin" && onForgotPassword ? (
+            <button
+              type="button"
+              className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              onClick={onForgotPassword}
+              disabled={isSubmitting}
+            >
+              Forgot password?
+            </button>
+          ) : null}
+        </div>
         <Input
           id={`auth-modal-${mode}-password`}
           type="password"
