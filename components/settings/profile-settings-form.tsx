@@ -3,11 +3,11 @@
 import { useEffect, useState, useTransition, type FormEvent } from "react";
 import { Check, Loader2 } from "lucide-react";
 
+import { updateProfile } from "@/lib/actions/profile";
 import {
   BIO_MAX_LENGTH,
-  updateProfile,
   type ProfileFormValues,
-} from "@/lib/actions/profile";
+} from "@/lib/validations/profile";
 import { Button } from "@/components/ui/button";
 import {
   Card,

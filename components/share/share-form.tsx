@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Sparkles } from "lucide-react";
+import { Download, Loader2, Sparkles } from "lucide-react";
 
 import { MarkdownRenderer } from "@/components/markdown-renderer";
 import {
@@ -31,10 +39,30 @@ import { suggestTags } from "@/lib/suggest-tags";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
-export function ShareForm() {
+function pdfDownloadFilename(title: string): string {
+  const base = title
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "")
+    .replace(/\s+/g, " ")
+    .slice(0, 120)
+    .trim();
+  const safe = base || "ChatShare Export";
+  return safe.toLowerCase().endsWith(".pdf") ? safe : `${safe}.pdf`;
+}
+
+/** Imperative API so the share paste banner can inject clipboard text. */
+export type ShareFormHandle = {
+  applyPastedTranscript: (text: string) => void;
+};
+
+export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
+  _props,
+  ref
+) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editorRef = useRef<RichTextEditorHandle>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
   const sourceModelHydratedRef = useRef(false);
   const [title, setTitle] = useState("");
   const [sourceModel, setSourceModel] = useState(() =>
@@ -45,6 +73,18 @@ export function ShareForm() {
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      applyPastedTranscript(text: string) {
+        setTranscriptText(text);
+        setError(null);
+      },
+    }),
+    []
+  );
 
   // Re-hydrate if URL/session params arrive after first paint (Suspense / paste=1).
   // Do not overwrite after the user has a value (or after a successful hydrate).
@@ -224,6 +264,59 @@ export function ShareForm() {
     }
   }
 
+  async function handleDownloadPdf() {
+    if (isGeneratingPdf || isSubmitting) return;
+
+    const htmlContent = previewRef.current?.innerHTML?.trim();
+    if (!htmlContent) {
+      setError("Add a transcript to generate a PDF preview first.");
+      return;
+    }
+
+    setError(null);
+    setIsGeneratingPdf(true);
+
+    try {
+      const exportTitle = title.trim() || "ChatShare Export";
+      const response = await fetch("/api/generate-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          htmlContent,
+          title: exportTitle,
+        }),
+      });
+
+      if (!response.ok) {
+        let message = "Failed to generate PDF.";
+        try {
+          const payload = (await response.json()) as { error?: string };
+          if (payload?.error) message = payload.error;
+        } catch {
+          // ignore JSON parse errors
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = pdfDownloadFilename(exportTitle);
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to generate PDF."
+      );
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="space-y-2">
@@ -328,7 +421,10 @@ export function ShareForm() {
       </div>
 
       {parsedConversation.messages.length > 0 ? (
-        <div className="mt-4 rounded-md border bg-muted/40 p-4">
+        <div
+          ref={previewRef}
+          className="mt-4 rounded-md border bg-muted/40 p-4"
+        >
           <h4 className="mb-2 text-sm font-semibold text-foreground">
             Conversation Preview
           </h4>
@@ -369,16 +465,47 @@ export function ShareForm() {
         </p>
       ) : null}
 
-      <Button type="submit" disabled={isSubmitting} className="w-full sm:w-auto">
-        {isSubmitting ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Publishing…
-          </>
-        ) : (
-          "Publish to ChatShare"
-        )}
-      </Button>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          type="submit"
+          disabled={isSubmitting || isGeneratingPdf}
+          className="w-full sm:w-auto"
+        >
+          {isSubmitting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Publishing…
+            </>
+          ) : (
+            "Publish to ChatShare"
+          )}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={
+            isGeneratingPdf ||
+            isSubmitting ||
+            parsedConversation.messages.length === 0
+          }
+          onClick={() => void handleDownloadPdf()}
+          className="w-full border-border bg-white text-foreground hover:bg-muted/60 sm:w-auto"
+        >
+          {isGeneratingPdf ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Generating…
+            </>
+          ) : (
+            <>
+              <Download className="h-4 w-4" />
+              Download PDF
+            </>
+          )}
+        </Button>
+      </div>
     </form>
   );
-}
+});
+
+ShareForm.displayName = "ShareForm";

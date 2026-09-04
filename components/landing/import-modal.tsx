@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Sparkles, Upload } from "lucide-react";
+import { ClipboardPaste, Loader2, Sparkles, Upload } from "lucide-react";
 
 import { MarkdownRenderer } from "@/components/markdown-renderer";
 import {
@@ -214,6 +214,8 @@ export function ImportModal({
   const editorRef = useRef<RichTextEditorHandle>(null);
   const [showPasteHint, setShowPasteHint] = useState(false);
   const [pasteSourceLabel, setPasteSourceLabel] = useState("Gemini");
+  const [clipboardNotice, setClipboardNotice] = useState<string | null>(null);
+  const [isReadingClipboard, setIsReadingClipboard] = useState(false);
   const [tagsInput, setTagsInput] = useState("");
   /** Keywords from the last click of “Suggest Tags” (not live auto-run). */
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
@@ -296,6 +298,7 @@ export function ImportModal({
     setTagsInput("");
     setSuggestedTags([]);
     setError(null);
+    setClipboardNotice(null);
     setResult(null);
     setIsLoading(false);
     setIsParsingText(false);
@@ -438,6 +441,12 @@ export function ImportModal({
     }
   }, [mode]);
 
+  useEffect(() => {
+    if (!clipboardNotice) return;
+    const timer = window.setTimeout(() => setClipboardNotice(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [clipboardNotice]);
+
   function sourceModelFromResult(preview: ParsedPreview): string {
     return resolveShareSourceModel(preview.source) || "Other";
   }
@@ -505,6 +514,27 @@ export function ImportModal({
       setIsPublishing(false);
       publishAfterAuthRef.current = false;
       publishInFlightRef.current = false;
+    }
+  }
+
+  async function handlePasteConversation() {
+    if (isReadingClipboard) return;
+    setClipboardNotice(null);
+    setIsReadingClipboard(true);
+    try {
+      const text = await navigator.clipboard.readText();
+      // Same path as TipTap onChange after a manual Ctrl+V paste.
+      setRawText(text);
+      setError(null);
+      if (text.trim()) {
+        setShowPasteHint(false);
+      }
+    } catch {
+      setClipboardNotice(
+        "Clipboard access denied. Please press Ctrl+V to paste manually."
+      );
+    } finally {
+      setIsReadingClipboard(false);
     }
   }
 
@@ -918,19 +948,38 @@ export function ImportModal({
           {showTextForm ? (
               <TabsContent value="text" className="mt-4 space-y-4">
                 {showPasteHint ? (
-                  <div
-                    role="status"
-                    className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-950 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-50"
-                  >
-                    Conversation copied from {pasteSourceLabel}! Press{" "}
-                    <kbd className="rounded border border-indigo-300 bg-white/80 px-1 font-mono text-xs dark:border-indigo-700 dark:bg-indigo-900/60">
-                      Ctrl+V
-                    </kbd>{" "}
-                    (or{" "}
-                    <kbd className="rounded border border-indigo-300 bg-white/80 px-1 font-mono text-xs dark:border-indigo-700 dark:bg-indigo-900/60">
-                      Cmd+V
-                    </kbd>
-                    ) to paste.
+                  <div className="space-y-3">
+                    <div
+                      role="status"
+                      className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-950 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-50"
+                    >
+                      Conversation copied from {pasteSourceLabel}! Press{" "}
+                      <kbd className="rounded border border-indigo-300 bg-white/80 px-1 font-mono text-xs dark:border-indigo-700 dark:bg-indigo-900/60">
+                        Ctrl+V
+                      </kbd>{" "}
+                      (or{" "}
+                      <kbd className="rounded border border-indigo-300 bg-white/80 px-1 font-mono text-xs dark:border-indigo-700 dark:bg-indigo-900/60">
+                        Cmd+V
+                      </kbd>
+                      ) to paste.
+                    </div>
+                    <Button
+                      type="button"
+                      className="w-full gap-2 sm:w-auto"
+                      disabled={isReadingClipboard || isPublishing}
+                      onClick={() => void handlePasteConversation()}
+                    >
+                      <ClipboardPaste className="h-4 w-4" />
+                      {isReadingClipboard ? "Pasting…" : "Paste Conversation"}
+                    </Button>
+                    {clipboardNotice ? (
+                      <p
+                        role="alert"
+                        className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-50"
+                      >
+                        {clipboardNotice}
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
                 <div className="space-y-4">

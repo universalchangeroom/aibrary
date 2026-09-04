@@ -5,7 +5,7 @@ import { ExternalLink } from "lucide-react";
 import { AutoUnstarToggle } from "@/components/dashboard/auto-unstar-toggle";
 import { ProfileSettingsForm } from "@/components/settings/profile-settings-form";
 import { Button } from "@/components/ui/button";
-import type { ProfileFormValues } from "@/lib/actions/profile";
+import type { ProfileFormValues } from "@/lib/validations/profile";
 import { authorPortfolioHref } from "@/lib/author-profile";
 import { ensureViewerPropsBalance } from "@/lib/props-balance";
 import { createClient } from "@/lib/supabase/server";
