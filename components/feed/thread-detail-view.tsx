@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AddFootnoteDialog } from "@/components/feed/add-footnote-dialog";
+import { AuthorLink } from "@/components/feed/author-link";
 import {
   ConversationView,
   type ConversationExpandState,
@@ -705,6 +706,11 @@ export function ThreadDetailView({
                     {thread.source_model ? (
                       <SourceModelBadge sourceModel={thread.source_model} />
                     ) : null}
+                    <AuthorLink
+                      author={thread.author}
+                      authorId={thread.author_id}
+                      className="text-sm text-muted-foreground hover:text-foreground"
+                    />
                     {thread.created_at ? (
                       <FormattedTime
                         date={thread.created_at}

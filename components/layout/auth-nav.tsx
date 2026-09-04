@@ -187,7 +187,7 @@ export function AuthNav({
               Starred
             </Link>
             <Link
-              href="/dashboard/settings"
+              href="/settings"
               role="menuitem"
               className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
               onClick={() => setMenuOpen(false)}

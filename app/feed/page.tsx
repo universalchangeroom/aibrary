@@ -1,4 +1,5 @@
 import { ThreadList } from "@/components/feed/thread-list";
+import { fetchAuthorsByIds } from "@/lib/author-profile";
 import { createClient } from "@/lib/supabase/server";
 import {
   asChatMessages,
@@ -34,6 +35,16 @@ export default async function FeedPage() {
     .map((row) => (row && typeof row === "object" ? (row as { id?: unknown }).id : null))
     .filter((id): id is string => typeof id === "string" && id.length > 0);
 
+  const authorIds = rows
+    .map((row) =>
+      row && typeof row === "object"
+        ? (row as { author_id?: unknown }).author_id
+        : null
+    )
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+  const authorsById = await fetchAuthorsByIds(supabase, authorIds);
+
   let threadVoteSummaries = new Map<string, ReturnType<typeof emptyVoteSummary>>();
 
   if (threadIds.length > 0) {
@@ -57,6 +68,8 @@ export default async function FeedPage() {
 
     const voteSummary =
       threadVoteSummaries.get(row.id) ?? emptyVoteSummary();
+    const authorId =
+      typeof row.author_id === "string" ? row.author_id : null;
 
     return [
       {
@@ -74,6 +87,9 @@ export default async function FeedPage() {
         })),
         score: voteSummary.score,
         userVote: voteSummary.userVote,
+        author: authorId
+          ? authorsById.get(authorId) ?? { id: authorId, username: null }
+          : null,
       } as ThreadWithFootnotes,
     ];
   });

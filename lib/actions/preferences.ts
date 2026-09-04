@@ -30,6 +30,7 @@ export async function setAutoUnstarPreference(
     return { success: false, error: error.message };
   }
 
+  revalidatePath("/settings");
   revalidatePath("/dashboard/settings");
   revalidatePath("/dashboard/starred");
   return { success: true, autoUnstar };

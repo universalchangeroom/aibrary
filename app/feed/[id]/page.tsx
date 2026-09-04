@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { ThreadPageClient } from "@/components/feed/thread-page-client";
+import { fetchAuthorsByIds } from "@/lib/author-profile";
 import { ensureViewerPropsBalance } from "@/lib/props-balance";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -74,7 +75,10 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
     );
   }
 
-  const voteResults = await Promise.all(voteQueries);
+  const [voteResults, authorsById] = await Promise.all([
+    Promise.all(voteQueries),
+    fetchAuthorsByIds(supabase, [data.author_id as string]),
+  ]);
 
   for (const result of voteResults) {
     if (result.error) {
@@ -98,6 +102,7 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
     user?.id ?? null
   );
 
+  const authorId = data.author_id as string;
   const thread: ThreadWithFootnotes = {
     ...data,
     content: asChatMessages(
@@ -115,6 +120,8 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
     }),
     score: threadVoteSummary.score,
     userVote: threadVoteSummary.userVote,
+    author:
+      authorsById.get(authorId) ?? { id: authorId, username: null },
   };
 
   let viewerTokenBalance: number | null = null;

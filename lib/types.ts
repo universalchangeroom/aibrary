@@ -1,3 +1,5 @@
+import type { AuthorProfile } from "@/lib/author-profile";
+
 /** Message shape stored in `threads.content` (jsonb). */
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -47,6 +49,8 @@ export type ThreadWithFootnotes = Thread & {
   footnotes: FootnoteWithVotes[];
   score: number;
   userVote: VoteValue | null;
+  /** Optional public author profile for feed / detail attribution. */
+  author?: AuthorProfile | null;
 };
 
 function normalizeRole(value: unknown): ChatMessage["role"] | null {
