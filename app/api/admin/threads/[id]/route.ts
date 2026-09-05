@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 
 import { isAdminEmail } from "@/lib/admin";
 import { createServiceClient } from "@/lib/supabase/admin";
@@ -164,6 +165,10 @@ export async function PATCH(
       { status: 422 }
     );
   }
+
+  // Approved threads enter Discover — bust ISR cache immediately.
+  revalidatePath("/feed");
+  revalidatePath(`/feed/${threadId}`);
 
   return NextResponse.json({
     success: true,

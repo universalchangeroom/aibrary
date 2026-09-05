@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Sparkles, Upload } from "lucide-react";
+import { Download, Loader2, Sparkles, Upload } from "lucide-react";
 
 import {
   ScreenshotImportPanel,
@@ -36,9 +36,21 @@ function inferSourceModel(source: string): string {
   return resolveShareSourceModel(source) || "Other";
 }
 
+function pdfDownloadFilename(title: string): string {
+  const base = title
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "")
+    .replace(/\s+/g, " ")
+    .slice(0, 120)
+    .trim();
+  const safe = base || "ChatShare Export";
+  return safe.toLowerCase().endsWith(".pdf") ? safe : `${safe}.pdf`;
+}
+
 export function ShareScreenshotForm() {
   const router = useRouter();
   const editorRef = useRef<RichTextEditorHandle>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
   const [preview, setPreview] = useState<ScreenshotParsedPreview | null>(null);
   const [rawText, setRawText] = useState("");
   const [sourceModel, setSourceModel] = useState<string>("");
@@ -47,6 +59,7 @@ export function ShareScreenshotForm() {
   const [error, setError] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   const appliedTagSet = useMemo(() => {
     return new Set(parseTags(tagsInput).map((tag) => tag.toLowerCase()));
@@ -193,6 +206,59 @@ export function ShareScreenshotForm() {
     }
   }
 
+  async function handleDownloadPdf() {
+    if (isGeneratingPdf || isSubmitting || isParsing) return;
+
+    const htmlContent = previewRef.current?.innerHTML?.trim();
+    if (!htmlContent) {
+      setError("Parse a screenshot to generate a PDF preview first.");
+      return;
+    }
+
+    setError(null);
+    setIsGeneratingPdf(true);
+
+    try {
+      const exportTitle = preview?.title?.trim() || "ChatShare Export";
+      const response = await fetch("/api/generate-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          htmlContent,
+          title: exportTitle,
+        }),
+      });
+
+      if (!response.ok) {
+        let message = "Failed to generate PDF.";
+        try {
+          const payload = (await response.json()) as { error?: string };
+          if (payload?.error) message = payload.error;
+        } catch {
+          // ignore JSON parse errors
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = pdfDownloadFilename(exportTitle);
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to generate PDF."
+      );
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <ScreenshotImportPanel
@@ -209,7 +275,8 @@ export function ShareScreenshotForm() {
           }
         }}
         editorRef={editorRef}
-        disabled={isSubmitting || isParsing}
+        previewContainerRef={previewRef}
+        disabled={isSubmitting || isParsing || isGeneratingPdf}
         footer={
           preview ? (
             <>
@@ -237,7 +304,7 @@ export function ShareScreenshotForm() {
                     variant="outline"
                     size="sm"
                     onClick={handleSuggestTags}
-                    disabled={isSubmitting || !rawText.trim()}
+                    disabled={isSubmitting || isGeneratingPdf || !rawText.trim()}
                   >
                     <Sparkles className="h-4 w-4" />
                     Suggest Tags
@@ -248,7 +315,7 @@ export function ShareScreenshotForm() {
                   value={tagsInput}
                   onChange={(event) => setTagsInput(event.target.value)}
                   placeholder="nextjs, react, debugging"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isGeneratingPdf}
                 />
                 {visibleSuggestedTags.length > 0 ? (
                   <div className="flex flex-wrap items-center gap-2 pt-0.5">
@@ -272,24 +339,50 @@ export function ShareScreenshotForm() {
                 ) : null}
               </div>
 
-              <Button
-                type="button"
-                onClick={() => void handlePublish()}
-                disabled={isSubmitting || isParsing}
-                className="w-full sm:w-auto"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Publishing…
-                  </>
-                ) : (
-                  <>
-                    <Upload className="h-4 w-4" />
-                    Publish to ChatShare
-                  </>
-                )}
-              </Button>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  onClick={() => void handlePublish()}
+                  disabled={isSubmitting || isParsing || isGeneratingPdf}
+                  className="w-full sm:w-auto"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Publishing…
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4" />
+                      Publish to ChatShare
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={
+                    isGeneratingPdf ||
+                    isSubmitting ||
+                    isParsing ||
+                    !preview.messages.length
+                  }
+                  onClick={() => void handleDownloadPdf()}
+                  className="w-full border-border bg-white text-foreground hover:bg-muted/60 sm:w-auto"
+                >
+                  {isGeneratingPdf ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Generating…
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4" />
+                      Download PDF
+                    </>
+                  )}
+                </Button>
+              </div>
             </>
           ) : null
         }

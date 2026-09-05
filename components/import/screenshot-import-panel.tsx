@@ -6,6 +6,7 @@ import {
   type ChangeEvent,
   type DragEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { ImageIcon, Loader2 } from "lucide-react";
 
@@ -96,6 +97,8 @@ type ScreenshotImportPanelProps = {
   onParsingChange?: (isParsing: boolean) => void;
   onParsed?: (preview: ScreenshotParsedPreview, transcript: string) => void;
   editorRef?: React.RefObject<RichTextEditorHandle>;
+  /** Ref attached to the Conversation Preview container for PDF export. */
+  previewContainerRef?: RefObject<HTMLDivElement | null>;
   disabled?: boolean;
   footer?: ReactNode;
 };
@@ -109,6 +112,7 @@ export function ScreenshotImportPanel({
   onParsed,
   onParsingChange,
   editorRef,
+  previewContainerRef,
   disabled = false,
   footer,
 }: ScreenshotImportPanelProps) {
@@ -249,7 +253,10 @@ export function ScreenshotImportPanel({
 
       {preview && preview.messages.length > 0 ? (
         <>
-          <div className="rounded-md border bg-muted/40 p-4">
+          <div
+            ref={previewContainerRef}
+            className="rounded-md border bg-muted/40 p-4"
+          >
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <Badge variant="secondary">{preview.source}</Badge>
               <span className="text-xs text-muted-foreground">

@@ -38,6 +38,27 @@ type ToggleStarResult =
   | { success: true; starred: boolean }
   | { success: false; error: string };
 
+/**
+ * Cookie-bound Props wallet for the signed-in viewer.
+ * Used by the client header so Discover can stay ISR-friendly.
+ */
+export async function getViewerPropsBalance(): Promise<number | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  const decayResult = await evaluatePropsDecay(user.id);
+  if (decayResult.success && decayResult.profile) {
+    return asTokenBalance(decayResult.profile.token_balance);
+  }
+
+  const ensured = await ensureViewerPropsBalance(supabase, user.id);
+  return ensured.balance;
+}
+
 function sumTransactionAmounts(
   rows: Array<{ amount?: unknown }> | null | undefined
 ): number {
@@ -384,7 +405,8 @@ export async function giveProps(
     }
   }
 
-  // Refresh layout (header balance) + feed/thread/portfolio surfaces.
+  // On-demand ISR: Discover feed rankings + thread Props total.
+  // Discover lives at `/feed`; thread detail at `/feed/[id]`.
   revalidatePath("/", "layout");
   revalidatePath("/");
   revalidatePath("/feed");
@@ -511,6 +533,8 @@ export async function retractProps(
       ? Math.max(0, updatedThread.total_tokens)
       : nextTotal;
 
+  // On-demand ISR: Discover feed rankings + thread Props total (Burn Rule).
+  // Discover lives at `/feed`; thread detail at `/feed/[id]`.
   revalidatePath("/", "layout");
   revalidatePath("/");
   revalidatePath("/feed");

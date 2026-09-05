@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 import { getHonestStartBalance } from "@/lib/props-balance";
@@ -239,6 +240,13 @@ export async function POST(request: Request) {
       { status: 422 }
     );
   }
+
+  // On-demand ISR: refresh Discover when a thread is live on the public feed.
+  if (!pendingReview) {
+    revalidatePath("/feed");
+  }
+  revalidatePath(`/feed/${thread.id}`);
+  revalidatePath(`/user/${user.id}`);
 
   return NextResponse.json(
     {

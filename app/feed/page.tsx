@@ -1,25 +1,25 @@
 import { ThreadList } from "@/components/feed/thread-list";
 import { fetchAuthorsByIds } from "@/lib/author-profile";
-import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/public";
 import {
   asChatMessages,
   asFootnotes,
   threadContentFromRow,
   type ThreadWithFootnotes,
 } from "@/lib/types";
-import { emptyVoteSummary, summarizeVotes, type VoteRow } from "@/lib/votes";
 
-export const dynamic = "force-dynamic";
+/** Discover feed: Incremental Static Regeneration every 60 seconds. */
+export const revalidate = 60;
 
+/**
+ * Public Discover list of published threads.
+ * Uses a cookie-free Supabase client so this page can be statically regenerated.
+ * User-specific overlays (auth, Props balance) live in the client header.
+ */
 export default async function FeedPage() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const supabase = createPublicClient();
 
   // Discover feed: only fully published public threads (pending_review is hidden).
-  // Explicit total_tokens so Props on cards stay in sync after giveProps.
   const { data, error } = await supabase
     .from("threads")
     .select(
@@ -31,9 +31,6 @@ export default async function FeedPage() {
 
   // Missing/null/errored queries must still render as an empty list — never throw.
   const rows = !error && Array.isArray(data) ? data : [];
-  const threadIds = rows
-    .map((row) => (row && typeof row === "object" ? (row as { id?: unknown }).id : null))
-    .filter((id): id is string => typeof id === "string" && id.length > 0);
 
   const authorIds = rows
     .map((row) =>
@@ -45,29 +42,11 @@ export default async function FeedPage() {
 
   const authorsById = await fetchAuthorsByIds(supabase, authorIds);
 
-  let threadVoteSummaries = new Map<string, ReturnType<typeof emptyVoteSummary>>();
-
-  if (threadIds.length > 0) {
-    const { data: votes } = await supabase
-      .from("votes")
-      .select("target_id, user_id, value")
-      .eq("target_type", "thread")
-      .in("target_id", threadIds);
-
-    threadVoteSummaries = summarizeVotes(
-      (votes ?? []) as VoteRow[],
-      threadIds,
-      user?.id ?? null
-    );
-  }
-
   const threadList: ThreadWithFootnotes[] = (rows ?? []).flatMap((row) => {
     if (!row || typeof row !== "object" || typeof row.id !== "string") {
       return [];
     }
 
-    const voteSummary =
-      threadVoteSummaries.get(row.id) ?? emptyVoteSummary();
     const authorId =
       typeof row.author_id === "string" ? row.author_id : null;
 
@@ -85,8 +64,9 @@ export default async function FeedPage() {
           score: 0,
           userVote: null,
         })),
-        score: voteSummary.score,
-        userVote: voteSummary.userVote,
+        // Public cache: no per-viewer vote overlay on Discover cards.
+        score: 0,
+        userVote: null,
         author: authorId
           ? authorsById.get(authorId) ?? { id: authorId, username: null }
           : null,

@@ -1,26 +1,44 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Share2 } from "lucide-react";
-import { unstable_noStore as noStore } from "next/cache";
 
 import { AuthNav } from "@/components/layout/auth-nav";
 import { Button } from "@/components/ui/button";
-import { ensureViewerPropsBalance } from "@/lib/props-balance";
-import { createClient } from "@/lib/supabase/server";
+import { useAuth } from "@/hooks/use-auth";
+import { getViewerPropsBalance } from "@/lib/actions/props";
 
-export async function SiteHeader() {
-  // Props balance must never be served from a static/RSC data cache.
-  noStore();
+/**
+ * Site chrome. Auth + Props balance load on the client so pages like Discover
+ * can use Incremental Static Regeneration without cookies() in the layout.
+ */
+export function SiteHeader() {
+  const pathname = usePathname();
+  const { user, isLoading } = useAuth();
+  const [tokenBalance, setTokenBalance] = useState<number | null>(null);
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  useEffect(() => {
+    if (!user) {
+      setTokenBalance(null);
+      return;
+    }
 
-  let tokenBalance: number | null = null;
-  if (user?.id) {
-    const ensured = await ensureViewerPropsBalance(supabase, user.id);
-    tokenBalance = ensured.balance;
-  }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const balance = await getViewerPropsBalance();
+        if (!cancelled) setTokenBalance(balance);
+      } catch {
+        if (!cancelled) setTokenBalance(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, pathname]);
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -35,7 +53,7 @@ export async function SiteHeader() {
           >
             Discover
           </Link>
-          {user ? (
+          {!isLoading && user ? (
             <Button
               asChild
               size="sm"
@@ -49,12 +67,13 @@ export async function SiteHeader() {
           ) : null}
         </nav>
 
-        {/* key forces AuthNav to remount when balance changes after router.refresh() */}
         <AuthNav
           key={
             typeof tokenBalance === "number"
               ? `props-${tokenBalance}`
-              : "props-unknown"
+              : user
+                ? "props-loading"
+                : "props-signed-out"
           }
           tokenBalance={tokenBalance}
           className="ml-auto"
