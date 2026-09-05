@@ -16,6 +16,8 @@ interface ThreadPageClientProps {
   currentUserId: string | null;
   viewerTokenBalance: number | null;
   viewerHasStarred: boolean;
+  /** Props this viewer has already given to this thread (Influence Cap). */
+  viewerGivenProps?: number;
 }
 
 export function ThreadPageClient({
@@ -24,6 +26,7 @@ export function ThreadPageClient({
   currentUserId,
   viewerTokenBalance,
   viewerHasStarred,
+  viewerGivenProps = 0,
 }: ThreadPageClientProps) {
   const serverPropsTotal = normalizePropsTotal(thread.total_tokens);
   const [displayedPropsTotal, setDisplayedPropsTotal] =
@@ -44,12 +47,13 @@ export function ThreadPageClient({
         </Button>
 
         <ThreadActions
-          key={`thread-actions-${thread.id}-${viewerTokenBalance ?? "none"}-${viewerHasStarred ? "1" : "0"}`}
+          key={`thread-actions-${thread.id}-${viewerTokenBalance ?? "none"}-${viewerHasStarred ? "1" : "0"}-${viewerGivenProps}`}
           threadId={thread.id}
           authorId={thread.author_id}
           currentUserId={currentUserId}
           tokenBalance={viewerTokenBalance}
           starred={viewerHasStarred}
+          previouslyGivenProps={viewerGivenProps}
           onOptimisticPropsGive={(amount) => {
             setDisplayedPropsTotal((prev) => prev + amount);
           }}

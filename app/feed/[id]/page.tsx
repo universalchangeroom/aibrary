@@ -126,19 +126,26 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
 
   let viewerTokenBalance: number | null = null;
   let viewerHasStarred = false;
+  let viewerGivenProps = 0;
 
   if (currentUserId) {
     // Server-only: ensure profile + Honest Start balance, then pass as props.
     // ThreadActions must not fetch balance on the client (hydration-safe).
-    const [balanceResult, { data: star }] = await Promise.all([
-      ensureViewerPropsBalance(supabase, currentUserId),
-      supabase
-        .from("starred_threads")
-        .select("user_id, thread_id")
-        .eq("user_id", currentUserId)
-        .eq("thread_id", id)
-        .maybeSingle(),
-    ]);
+    const [balanceResult, { data: star }, { data: giftRows }] =
+      await Promise.all([
+        ensureViewerPropsBalance(supabase, currentUserId),
+        supabase
+          .from("starred_threads")
+          .select("user_id, thread_id")
+          .eq("user_id", currentUserId)
+          .eq("thread_id", id)
+          .maybeSingle(),
+        supabase
+          .from("token_transactions")
+          .select("amount")
+          .eq("giver_id", currentUserId)
+          .eq("thread_id", id),
+      ]);
 
     viewerTokenBalance = balanceResult.balance;
     if ("error" in balanceResult && balanceResult.error) {
@@ -148,6 +155,13 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
       );
     }
     viewerHasStarred = Boolean(star);
+    viewerGivenProps = (giftRows ?? []).reduce((sum, row) => {
+      const amount =
+        typeof row.amount === "number" && Number.isFinite(row.amount)
+          ? Math.floor(row.amount)
+          : 0;
+      return sum + Math.max(0, amount);
+    }, 0);
   }
 
   return (
@@ -158,6 +172,7 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
         currentUserId={currentUserId}
         viewerTokenBalance={viewerTokenBalance}
         viewerHasStarred={viewerHasStarred}
+        viewerGivenProps={viewerGivenProps}
       />
     </main>
   );

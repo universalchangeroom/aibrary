@@ -10,6 +10,7 @@ import {
   normalizeTimezone,
   type EnsuredProfile,
 } from "@/lib/props-balance";
+import { PROPS_INFLUENCE_CAP } from "@/lib/props-cap";
 import { createClient } from "@/lib/supabase/server";
 
 type ActionResult =
@@ -25,9 +26,29 @@ type GivePropsResult =
     }
   | { success: false; error: string };
 
+type RetractPropsResult =
+  | {
+      success: true;
+      burnedAmount: number;
+      totalTokens: number;
+    }
+  | { success: false; error: string };
+
 type ToggleStarResult =
   | { success: true; starred: boolean }
   | { success: false; error: string };
+
+function sumTransactionAmounts(
+  rows: Array<{ amount?: unknown }> | null | undefined
+): number {
+  return (rows ?? []).reduce((sum, row) => {
+    const amount =
+      typeof row.amount === "number" && Number.isFinite(row.amount)
+        ? Math.floor(row.amount)
+        : 0;
+    return sum + Math.max(0, amount);
+  }, 0);
+}
 
 /**
  * Applies weekly decay/reset rules to a user's Props balance.
@@ -188,6 +209,28 @@ export async function giveProps(
     return {
       success: false,
       error: "You cannot give Props to your own chat.",
+    };
+  }
+
+  const { data: priorGifts, error: priorError } = await supabase
+    .from("token_transactions")
+    .select("amount")
+    .eq("giver_id", user.id)
+    .eq("thread_id", threadId);
+
+  if (priorError) {
+    return { success: false, error: priorError.message };
+  }
+
+  const previouslyGiven = sumTransactionAmounts(priorGifts);
+  if (previouslyGiven + amount > PROPS_INFLUENCE_CAP) {
+    const remaining = Math.max(0, PROPS_INFLUENCE_CAP - previouslyGiven);
+    return {
+      success: false,
+      error:
+        remaining === 0
+          ? `You have reached the ${PROPS_INFLUENCE_CAP}-Prop Influence Cap for this thread.`
+          : `Influence Cap: you can give at most ${remaining} more Props to this thread (${PROPS_INFLUENCE_CAP} total).`,
     };
   }
 
@@ -362,6 +405,125 @@ export async function giveProps(
     // Always the value returned by the service-role SELECT after UPDATE.
     remainingBalance,
     totalTokens: nextTotal,
+  };
+}
+
+/**
+ * Retracts (burns) all Props the current user previously gave to a thread.
+ * Ledger rows are deleted and the thread total is decremented, but the giver's
+ * wallet balance is NOT refunded — burned Props are gone permanently.
+ */
+export async function retractProps(
+  threadId: string
+): Promise<RetractPropsResult> {
+  if (!threadId) {
+    return { success: false, error: "Missing thread id." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return { success: false, error: "You must be signed in to retract Props." };
+  }
+
+  const { data: gifts, error: giftsError } = await supabase
+    .from("token_transactions")
+    .select("id, amount")
+    .eq("giver_id", user.id)
+    .eq("thread_id", threadId);
+
+  if (giftsError) {
+    return { success: false, error: giftsError.message };
+  }
+
+  const burnedAmount = sumTransactionAmounts(gifts);
+  if (burnedAmount <= 0 || !gifts || gifts.length === 0) {
+    return {
+      success: false,
+      error: "You have not given any Props to this thread.",
+    };
+  }
+
+  const { data: thread, error: threadError } = await supabase
+    .from("threads")
+    .select("id, author_id, total_tokens")
+    .eq("id", threadId)
+    .single();
+
+  if (threadError || !thread) {
+    return { success: false, error: threadError?.message || "Thread not found." };
+  }
+
+  const threadTotal =
+    typeof thread.total_tokens === "number" ? thread.total_tokens : 0;
+  const nextTotal = Math.max(0, threadTotal - burnedAmount);
+
+  let admin: ReturnType<
+    typeof import("@/lib/supabase/admin").createServiceClient
+  >;
+
+  try {
+    const { createServiceClient } = await import("@/lib/supabase/admin");
+    admin = createServiceClient();
+  } catch (err) {
+    return {
+      success: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Service role is required to retract Props.",
+    };
+  }
+
+  // No DELETE RLS on token_transactions for givers — burn via service role.
+  // Intentionally does NOT credit profiles.token_balance (Burn Rule).
+  const { error: deleteError } = await admin
+    .from("token_transactions")
+    .delete()
+    .eq("giver_id", user.id)
+    .eq("thread_id", threadId);
+
+  if (deleteError) {
+    return { success: false, error: deleteError.message };
+  }
+
+  const { data: updatedThread, error: totalError } = await admin
+    .from("threads")
+    .update({ total_tokens: nextTotal })
+    .eq("id", threadId)
+    .select("id, total_tokens")
+    .maybeSingle();
+
+  if (totalError) {
+    return { success: false, error: totalError.message };
+  }
+
+  if (!updatedThread) {
+    return { success: false, error: "Failed to update thread Props total." };
+  }
+
+  const syncedTotal =
+    typeof updatedThread.total_tokens === "number"
+      ? Math.max(0, updatedThread.total_tokens)
+      : nextTotal;
+
+  revalidatePath("/", "layout");
+  revalidatePath("/");
+  revalidatePath("/feed");
+  revalidatePath(`/feed/${threadId}`);
+  revalidatePath(`/user/${user.id}`);
+  if (thread.author_id) {
+    revalidatePath(`/user/${thread.author_id}`);
+  }
+
+  return {
+    success: true,
+    burnedAmount,
+    totalTokens: syncedTotal,
   };
 }
 
