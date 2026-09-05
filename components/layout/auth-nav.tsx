@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
+  HelpCircle,
   Loader2,
   LogOut,
   NotebookText,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { AuthModal } from "@/components/auth/auth-modal";
+import { PropsExplainerModal } from "@/components/props-explainer-modal";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { isAdminEmail } from "@/lib/admin";
@@ -37,6 +39,7 @@ export function AuthNav({
   const { user, isLoading } = useAuth();
   const [authOpen, setAuthOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [propsExplainerOpen, setPropsExplainerOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -108,12 +111,26 @@ export function AuthNav({
   return (
     <div className={cn("flex items-center gap-4", className)}>
       {showPropsBalance ? (
-        <span
-          className="inline-flex items-center rounded-md border bg-muted/40 px-2.5 py-1.5 text-xs font-medium tabular-nums text-muted-foreground"
-          aria-label={`${tokenBalance} Props`}
-        >
-          {tokenBalance} 🎉
-        </span>
+        <div className="inline-flex items-center gap-1.5">
+          <span
+            className="inline-flex items-center rounded-md border bg-muted/40 px-2.5 py-1.5 text-xs font-medium tabular-nums text-muted-foreground"
+            aria-label={`${tokenBalance} Props`}
+          >
+            {tokenBalance} 🎉
+          </span>
+          <button
+            type="button"
+            onClick={() => setPropsExplainerOpen(true)}
+            className="rounded-full p-0.5 text-stone-400 transition-colors hover:text-stone-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="How Props work"
+          >
+            <HelpCircle className="h-4 w-4" aria-hidden />
+          </button>
+          <PropsExplainerModal
+            isOpen={propsExplainerOpen}
+            onClose={() => setPropsExplainerOpen(false)}
+          />
+        </div>
       ) : null}
 
       <div className="relative" ref={menuRef}>
