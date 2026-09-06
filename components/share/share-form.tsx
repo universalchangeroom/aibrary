@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { parseRawText } from "@/lib/parse-raw-text";
 import { parseTags } from "@/lib/parse-transcript";
 import {
@@ -70,10 +71,12 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
   );
   const [tagsInput, setTagsInput] = useState("");
   const [transcriptText, setTranscriptText] = useState("");
+  const [summary, setSummary] = useState("");
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
 
   useImperativeHandle(
     ref,
@@ -123,6 +126,43 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
 
   function handleSuggestTags() {
     setSuggestedTags(suggestTags(transcriptText, 5));
+  }
+
+  async function handleGenerateSummary() {
+    const transcript = (
+      editorRef.current?.getMarkdown() ||
+      transcriptText ||
+      ""
+    ).trim();
+    if (!transcript || isSummarizing || isSubmitting) return;
+
+    setError(null);
+    setIsSummarizing(true);
+
+    try {
+      const response = await fetch("/api/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        summary?: string;
+        error?: string;
+      };
+
+      if (!response.ok || typeof payload.summary !== "string") {
+        throw new Error(payload.error || "Failed to generate summary.");
+      }
+
+      setSummary(payload.summary.trim());
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to generate summary."
+      );
+    } finally {
+      setIsSummarizing(false);
+    }
   }
 
   function appendSuggestedTag(tag: string) {
@@ -358,16 +398,41 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
       <div className="space-y-2">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <Label htmlFor="tags">Tags</Label>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleSuggestTags}
-            disabled={isSubmitting || !transcriptText.trim()}
-          >
-            <Sparkles className="h-4 w-4" />
-            Suggest Tags
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleGenerateSummary()}
+              disabled={
+                isSubmitting ||
+                isSummarizing ||
+                !transcriptText.trim()
+              }
+            >
+              {isSummarizing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Summarizing…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  Generate Summary
+                </>
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleSuggestTags}
+              disabled={isSubmitting || isSummarizing || !transcriptText.trim()}
+            >
+              <Sparkles className="h-4 w-4" />
+              Suggest Tags
+            </Button>
+          </div>
         </div>
         <Input
           id="tags"
@@ -421,40 +486,59 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
       </div>
 
       {parsedConversation.messages.length > 0 ? (
-        <div
-          ref={previewRef}
-          className="mt-4 rounded-md border bg-muted/40 p-4"
-        >
-          <h4 className="mb-2 text-sm font-semibold text-foreground">
-            Conversation Preview
-          </h4>
-          <div className="max-h-72 space-y-3 overflow-y-auto">
-            {parsedConversation.messages.map((msg, idx) => {
-              const isUser = msg.role === "user";
-              return (
-                <div
-                  key={`${msg.role}-${idx}`}
-                  className={cn(
-                    "rounded border p-3 text-sm",
-                    isUser
-                      ? "border-border bg-muted/50 text-foreground"
-                      : "border-border bg-background text-foreground"
-                  )}
-                >
-                  <span
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="summary">Summary</Label>
+            <Textarea
+              id="summary"
+              value={summary}
+              onChange={(event) => setSummary(event.target.value)}
+              placeholder="Generate a TL;DR, or write your own 1–2 sentence summary…"
+              rows={3}
+              disabled={isSubmitting || isSummarizing}
+              className="min-h-[4.5rem] resize-y"
+            />
+            <p className="text-xs text-muted-foreground">
+              Edit freely before publishing. Use Generate Summary to draft a
+              TL;DR from the transcript.
+            </p>
+          </div>
+
+          <div
+            ref={previewRef}
+            className="rounded-md border bg-muted/40 p-4"
+          >
+            <h4 className="mb-2 text-sm font-semibold text-foreground">
+              Conversation Preview
+            </h4>
+            <div className="max-h-72 space-y-3 overflow-y-auto">
+              {parsedConversation.messages.map((msg, idx) => {
+                const isUser = msg.role === "user";
+                return (
+                  <div
+                    key={`${msg.role}-${idx}`}
                     className={cn(
-                      "mb-2 inline-block rounded px-2 py-0.5 text-xs font-bold uppercase",
+                      "rounded border p-3 text-sm",
                       isUser
-                        ? "bg-secondary text-secondary-foreground"
-                        : "bg-primary/15 text-primary"
+                        ? "border-border bg-muted/50 text-foreground"
+                        : "border-border bg-background text-foreground"
                     )}
                   >
-                    {isUser ? "USER" : "AI"}
-                  </span>
-                  <MarkdownRenderer content={msg.content} />
-                </div>
-              );
-            })}
+                    <span
+                      className={cn(
+                        "mb-2 inline-block rounded px-2 py-0.5 text-xs font-bold uppercase",
+                        isUser
+                          ? "bg-secondary text-secondary-foreground"
+                          : "bg-primary/15 text-primary"
+                      )}
+                    >
+                      {isUser ? "USER" : "AI"}
+                    </span>
+                    <MarkdownRenderer content={msg.content} />
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       ) : null}
