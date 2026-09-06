@@ -65,7 +65,8 @@ export function BookmarkletCard({ className }: BookmarkletCardProps) {
         <span className="font-mono">
           {appOrigin}/share?paste=1
         </span>{" "}
-        after copying. Re-drag the button if you change hosts or ports.
+        (with source/model query params) after copying. Re-drag the button if
+        the destination looks wrong.
       </p>
     </div>
   );

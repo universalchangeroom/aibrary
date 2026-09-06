@@ -24,7 +24,55 @@ import { Markdown } from "tiptap-markdown";
 import type { Editor } from "@tiptap/react";
 
 import { Button } from "@/components/ui/button";
+import {
+  isProxyableImageUrl,
+  proxiedImageUrl,
+} from "@/lib/proxy-image";
 import { cn } from "@/lib/utils";
+
+/**
+ * TipTap Image + tiptap-markdown serialize/parse so `![alt](url)` round-trips
+ * instead of vanishing when the parent syncs Markdown.
+ */
+const MarkdownImage = Image.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize(
+          state: {
+            write: (text: string) => void;
+            esc?: (text: string) => string;
+          },
+          node: {
+            attrs: {
+              src?: string | null;
+              alt?: string | null;
+              title?: string | null;
+            };
+          }
+        ) {
+          const alt = node.attrs.alt ?? "";
+          const src = String(node.attrs.src ?? "").replace(/[()]/g, "\\$&");
+          const title = node.attrs.title
+            ? ` "${String(node.attrs.title).replace(/"/g, '\\"')}"`
+            : "";
+          state.write(`![${alt}](${src}${title})`);
+        },
+        parse: {
+          // markdown-it → <img>; TipTap Image parseHTML picks it up.
+        },
+      },
+    };
+  },
+}).configure({
+  inline: true,
+  allowBase64: true,
+  HTMLAttributes: {
+    referrerPolicy: "no-referrer",
+    class:
+      "my-2 max-h-36 w-auto cursor-zoom-in rounded-md border border-stone-200 object-cover shadow-sm",
+  },
+});
 
 export type RichTextEditorProps = {
   /** Markdown string controlled by the parent form. */
@@ -87,7 +135,7 @@ function markdownImagesFromHtml(html: string): string[] {
     if (!src) continue;
     const alt =
       tag.match(/\balt\s*=\s*["']([^"']*)["']/i)?.[1]?.trim() ||
-      "Generated image";
+      "AI Generated Image";
     out.push(`![${alt}](${src})`);
   }
   return out;
@@ -183,10 +231,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         emptyEditorClass:
           "before:pointer-events-none before:float-left before:h-0 before:text-muted-foreground before:content-[attr(data-placeholder)]",
       }),
-      Image.configure({
-        inline: true,
-        allowBase64: true,
-      }),
+      MarkdownImage,
       Markdown.configure({
         // HTML paste → document; serialization via getMarkdown() on every update.
         html: true,
@@ -217,7 +262,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
           "[&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-muted/60 [&_pre]:p-3",
           "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
           "[&_strong]:font-semibold",
-          "[&_img]:my-2 [&_img]:max-h-64 [&_img]:max-w-full [&_img]:rounded-md [&_img]:object-contain",
+          "[&_img]:my-2 [&_img]:max-h-36 [&_img]:w-auto [&_img]:cursor-zoom-in [&_img]:rounded-md [&_img]:border [&_img]:border-stone-200 [&_img]:object-cover [&_img]:shadow-sm",
           editorClassName
         ),
       },
@@ -260,6 +305,50 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     if (!editor) return;
     editor.setEditable(editable);
   }, [editable, editor]);
+
+  // Googleusercontent (and similar) often fail with a document Referer; retry via proxy.
+  // Click thumbnail → open full-size image in a new tab.
+  useEffect(() => {
+    if (!editor) return;
+    const root = editor.view.dom;
+
+    function onImageError(event: Event) {
+      const target = event.target;
+      if (!(target instanceof HTMLImageElement)) return;
+      const current = target.getAttribute("src") || target.src || "";
+      if (!isProxyableImageUrl(current)) return;
+      const original =
+        target.getAttribute("data-original-src") ||
+        target.getAttribute("data-src") ||
+        current;
+      if (!isProxyableImageUrl(original)) return;
+      target.setAttribute("data-original-src", original);
+      target.setAttribute("referrerpolicy", "no-referrer");
+      target.src = proxiedImageUrl(original);
+    }
+
+    function onImageClick(event: MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof HTMLImageElement)) return;
+      if (!root.contains(target)) return;
+      const src =
+        target.getAttribute("data-original-src") ||
+        target.getAttribute("src") ||
+        target.src ||
+        "";
+      if (!src) return;
+      event.preventDefault();
+      event.stopPropagation();
+      window.open(src, "_blank", "noopener,noreferrer");
+    }
+
+    root.addEventListener("error", onImageError, true);
+    root.addEventListener("click", onImageClick);
+    return () => {
+      root.removeEventListener("error", onImageError, true);
+      root.removeEventListener("click", onImageClick);
+    };
+  }, [editor]);
 
   if (!editor) {
     return (

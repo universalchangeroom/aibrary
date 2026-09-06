@@ -1015,11 +1015,17 @@ function containsMarkdownImage(line) {
   return /!\[[^\]]*\]\([^)\s]+[^)]*\)/.test(String(line || ""));
 }
 
+/** Bookmarklet placeholder for image-only assistant turns. */
+function containsAiGeneratedImageMarker(text) {
+  return /\[AI Generated Image\]/i.test(String(text || ""));
+}
+
 /** True when a turn has plain text and/or image Markdown (not empty whitespace). */
 function hasTurnContent(text) {
   const t = String(text || "").trim();
   if (!t) return false;
-  return containsMarkdownImage(t) || t.length > 0;
+  if (containsMarkdownImage(t) || containsAiGeneratedImageMarker(t)) return true;
+  return t.length > 0;
 }
 
 /** Collapse runaway blank lines so preview/editor spacing stays readable. */
@@ -1034,7 +1040,13 @@ function isDateTimeHeaderLine(line) {
   const trimmed = String(line || "").trim();
   if (!trimmed || trimmed.length > 80) return false;
   // Preserve markdown images (ChatGPT estuary / DALL·E tags from the bookmarklet).
-  if (containsMarkdownImage(trimmed) || trimmed.startsWith("![")) return false;
+  if (
+    containsMarkdownImage(trimmed) ||
+    containsAiGeneratedImageMarker(trimmed) ||
+    trimmed.startsWith("![")
+  ) {
+    return false;
+  }
   if (SPEAKER_LABEL_ONLY.test(trimmed)) return false;
   return DATETIME_LINE_RES.some((re) => re.test(trimmed));
 }
@@ -1167,7 +1179,10 @@ function buildAssistantMessage(content, reasoning) {
   const extracted = extractInlineReasoning(content);
   // Prefer trimmed main body; fall back to raw content when it is image-only Markdown.
   let main = sanitizeMessageContent(extracted.content || "");
-  if (!main && containsMarkdownImage(content)) {
+  if (
+    !main &&
+    (containsMarkdownImage(content) || containsAiGeneratedImageMarker(content))
+  ) {
     main = sanitizeMessageContent(content);
   }
   const reasonParts = [reasoning, extracted.reasoning].filter(
@@ -1344,7 +1359,10 @@ function parseRawText(text) {
       body
         .split(/\r?\n/)
         .filter(
-          (line) => containsMarkdownImage(line) || !isDateTimeHeaderLine(line)
+          (line) =>
+            containsMarkdownImage(line) ||
+            containsAiGeneratedImageMarker(line) ||
+            !isDateTimeHeaderLine(line)
         )
         .join("\n")
     );

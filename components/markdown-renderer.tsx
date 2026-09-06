@@ -2,6 +2,7 @@
 
 import { Check, ChevronDown, Copy, ImageIcon } from "lucide-react";
 import {
+  useEffect,
   useState,
   type ComponentPropsWithoutRef,
   type ReactNode,
@@ -12,6 +13,10 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import remarkGfm from "remark-gfm";
 
 import { Button } from "@/components/ui/button";
+import {
+  isProxyableImageUrl,
+  proxiedImageUrl,
+} from "@/lib/proxy-image";
 import { splitThoughtProcess } from "@/lib/thought-process";
 import { cn } from "@/lib/utils";
 
@@ -135,11 +140,21 @@ function MarkdownCode({
 /**
  * Markdown images (`![alt](url)`): responsive thumbnail, open full size in a
  * new tab, graceful fallback when the URL is broken/expired.
+ * Google CDN assets often need referrerPolicy=no-referrer; on failure we retry
+ * via `/api/proxy-image`.
  */
 function MarkdownImage({ src, alt, title, className, ...rest }: ImgProps) {
-  const [failed, setFailed] = useState(false);
   const href = typeof src === "string" ? src.trim() : "";
   const label = (alt || title || "Image").trim() || "Image";
+  const [displaySrc, setDisplaySrc] = useState(href);
+  const [usedProxy, setUsedProxy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setDisplaySrc(href);
+    setUsedProxy(false);
+    setFailed(false);
+  }, [href]);
 
   if (!href || failed) {
     return (
@@ -151,59 +166,63 @@ function MarkdownImage({ src, alt, title, className, ...rest }: ImgProps) {
             : "Original image unavailable"
         }
         className={cn(
-          "my-3 flex max-h-64 w-full max-w-md flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/40 px-4 py-10 text-muted-foreground shadow-sm",
+          "my-2 inline-flex max-h-36 w-auto flex-col items-center justify-center gap-1 rounded-md border border-dashed border-stone-200 bg-muted/40 px-3 py-6 text-muted-foreground shadow-sm",
           className
         )}
       >
-        <ImageIcon className="h-8 w-8 shrink-0 opacity-70" aria-hidden />
-        <span className="max-w-full px-2 text-center text-xs font-medium">
+        <ImageIcon className="h-5 w-5 shrink-0 opacity-70" aria-hidden />
+        <span className="max-w-[9rem] px-1 text-center text-[10px] font-medium leading-tight">
           Original image unavailable
-          {label && label !== "Image" ? (
-            <span className="mt-1 block truncate text-[11px] font-normal opacity-80">
-              {label}
-            </span>
-          ) : null}
         </span>
       </span>
     );
   }
 
   function handleError() {
+    if (!usedProxy && isProxyableImageUrl(href)) {
+      setUsedProxy(true);
+      setDisplaySrc(proxiedImageUrl(href));
+      return;
+    }
     setFailed(true);
   }
 
+  const openHref =
+    usedProxy && isProxyableImageUrl(href) ? proxiedImageUrl(href) : href;
+
   return (
     <a
-      href={href}
+      href={openHref}
       target="_blank"
       rel="noopener noreferrer"
       title={title || "Click to view full image ↗"}
       className={cn(
-        "group relative my-3 inline-flex max-w-md no-underline outline-none",
+        "group relative my-2 inline-block max-w-fit no-underline outline-none",
         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         className
       )}
     >
-      <span className="relative block max-h-64 max-w-md overflow-hidden rounded-lg border border-border bg-muted/30 shadow-sm">
+      <span className="relative inline-block max-h-36 overflow-hidden rounded-md border border-stone-200 bg-muted/20 shadow-sm">
         {/* eslint-disable-next-line @next/next/no-img-element -- remote markdown image URLs are dynamic */}
         <img
-          src={href}
+          {...rest}
+          src={displaySrc}
           alt={label}
-          title={title}
+          title={title || "Click to view full image ↗"}
           loading="lazy"
           decoding="async"
+          referrerPolicy="no-referrer"
           onError={handleError}
-          className="block h-auto max-h-64 w-full max-w-md object-cover transition-opacity hover:opacity-95"
-          {...rest}
+          className="block h-auto max-h-36 w-auto object-cover transition-opacity hover:opacity-95"
         />
         <span
           className={cn(
-            "pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-black/70 via-black/35 to-transparent px-2 pb-2.5 pt-10",
+            "pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-black/70 via-black/30 to-transparent px-1.5 pb-1.5 pt-6",
             "opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
           )}
         >
-          <span className="rounded-full bg-background/95 px-2.5 py-1 text-[11px] font-medium text-foreground shadow-sm ring-1 ring-border/60">
-            Click to view full image ↗
+          <span className="rounded bg-background/95 px-1.5 py-0.5 text-[10px] font-medium text-foreground shadow-sm ring-1 ring-border/60">
+            View full ↗
           </span>
         </span>
       </span>
