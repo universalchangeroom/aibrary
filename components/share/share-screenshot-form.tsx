@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   type RichTextEditorHandle,
 } from "@/components/rich-text-editor";
@@ -55,11 +56,13 @@ export function ShareScreenshotForm() {
   const [rawText, setRawText] = useState("");
   const [sourceModel, setSourceModel] = useState<string>("");
   const [tagsInput, setTagsInput] = useState("");
+  const [summary, setSummary] = useState("");
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
 
   const appliedTagSet = useMemo(() => {
     return new Set(parseTags(tagsInput).map((tag) => tag.toLowerCase()));
@@ -73,6 +76,43 @@ export function ShareScreenshotForm() {
 
   function handleSuggestTags() {
     setSuggestedTags(suggestTags(rawText, 5));
+  }
+
+  async function handleGenerateSummary() {
+    const transcript = (
+      editorRef.current?.getMarkdown() ||
+      rawText ||
+      ""
+    ).trim();
+    if (!transcript || isSummarizing || isSubmitting) return;
+
+    setError(null);
+    setIsSummarizing(true);
+
+    try {
+      const response = await fetch("/api/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        summary?: string;
+        error?: string;
+      };
+
+      if (!response.ok || typeof payload.summary !== "string") {
+        throw new Error(payload.error || "Failed to generate summary.");
+      }
+
+      setSummary(payload.summary.trim());
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to generate summary."
+      );
+    } finally {
+      setIsSummarizing(false);
+    }
   }
 
   function appendSuggestedTag(tag: string) {
@@ -299,23 +339,54 @@ export function ShareScreenshotForm() {
               <div className="space-y-2">
                 <div className="flex flex-wrap items-end justify-between gap-2">
                   <Label htmlFor="share-screenshot-tags">Tags</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSuggestTags}
-                    disabled={isSubmitting || isGeneratingPdf || !rawText.trim()}
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    Suggest Tags
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSuggestTags}
+                      disabled={
+                        isSubmitting ||
+                        isGeneratingPdf ||
+                        isSummarizing ||
+                        !rawText.trim()
+                      }
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      Suggest Tags
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleGenerateSummary()}
+                      disabled={
+                        isSubmitting ||
+                        isGeneratingPdf ||
+                        isSummarizing ||
+                        !rawText.trim()
+                      }
+                    >
+                      {isSummarizing ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Summarizing…
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-4 w-4" />
+                          Generate Summary
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
                 <Input
                   id="share-screenshot-tags"
                   value={tagsInput}
                   onChange={(event) => setTagsInput(event.target.value)}
                   placeholder="nextjs, react, debugging"
-                  disabled={isSubmitting || isGeneratingPdf}
+                  disabled={isSubmitting || isGeneratingPdf || isSummarizing}
                 />
                 {visibleSuggestedTags.length > 0 ? (
                   <div className="flex flex-wrap items-center gap-2 pt-0.5">
@@ -337,6 +408,19 @@ export function ShareScreenshotForm() {
                     ))}
                   </div>
                 ) : null}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="share-screenshot-summary">Summary (TL;DR)</Label>
+                <Textarea
+                  id="share-screenshot-summary"
+                  value={summary}
+                  onChange={(event) => setSummary(event.target.value)}
+                  placeholder="Click Generate Summary, or write your own 1–2 sentence TL;DR…"
+                  rows={3}
+                  disabled={isSubmitting || isSummarizing || isGeneratingPdf}
+                  className="min-h-[4.5rem] resize-y"
+                />
               </div>
 
               <div className="flex flex-wrap items-center gap-3">

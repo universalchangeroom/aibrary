@@ -403,6 +403,16 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
               type="button"
               variant="outline"
               size="sm"
+              onClick={handleSuggestTags}
+              disabled={isSubmitting || isSummarizing || !transcriptText.trim()}
+            >
+              <Sparkles className="h-4 w-4" />
+              Suggest Tags
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={() => void handleGenerateSummary()}
               disabled={
                 isSubmitting ||
@@ -421,16 +431,6 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
                   Generate Summary
                 </>
               )}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleSuggestTags}
-              disabled={isSubmitting || isSummarizing || !transcriptText.trim()}
-            >
-              <Sparkles className="h-4 w-4" />
-              Suggest Tags
             </Button>
           </div>
         </div>
@@ -485,25 +485,24 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
         </p>
       </div>
 
-      {parsedConversation.messages.length > 0 ? (
-        <div className="space-y-3">
-          <div className="space-y-2">
-            <Label htmlFor="summary">Summary</Label>
-            <Textarea
-              id="summary"
-              value={summary}
-              onChange={(event) => setSummary(event.target.value)}
-              placeholder="Generate a TL;DR, or write your own 1–2 sentence summary…"
-              rows={3}
-              disabled={isSubmitting || isSummarizing}
-              className="min-h-[4.5rem] resize-y"
-            />
-            <p className="text-xs text-muted-foreground">
-              Edit freely before publishing. Use Generate Summary to draft a
-              TL;DR from the transcript.
-            </p>
-          </div>
+      <div className="space-y-3">
+        <div className="space-y-2">
+          <Label htmlFor="summary">Summary (TL;DR)</Label>
+          <Textarea
+            id="summary"
+            value={summary}
+            onChange={(event) => setSummary(event.target.value)}
+            placeholder="Click Generate Summary, or write your own 1–2 sentence TL;DR…"
+            rows={3}
+            disabled={isSubmitting || isSummarizing}
+            className="min-h-[4.5rem] resize-y"
+          />
+          <p className="text-xs text-muted-foreground">
+            Edit freely before publishing.
+          </p>
+        </div>
 
+        {parsedConversation.messages.length > 0 ? (
           <div
             ref={previewRef}
             className="rounded-md border bg-muted/40 p-4"
@@ -540,8 +539,8 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
               })}
             </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
       {error ? (
         <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
