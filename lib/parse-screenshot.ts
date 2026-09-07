@@ -1,9 +1,15 @@
 /**
  * Server-side vision extraction for mobile chat scrolling screenshots.
- * Requires GEMINI_API_KEY (uses gemini-flash-latest by default).
+ * Requires GEMINI_API_KEY (uses gemini-flash-latest by default, with fallbacks).
  */
 
 import { GoogleGenAI, Type } from "@google/genai";
+
+import {
+  formatGeminiError,
+  resolveGeminiModelChain,
+  withGeminiModelFallback,
+} from "@/lib/gemini-resilience";
 
 export type ScreenshotParseResult = {
   title: string;
@@ -192,8 +198,9 @@ export async function parseScreenshotBuffer(
     );
   }
 
-  const model =
+  const preferred =
     process.env.GEMINI_VISION_MODEL?.trim() || DEFAULT_MODEL;
+  const models = resolveGeminiModelChain(preferred);
   const normalizedMime =
     mimeType.toLowerCase().split(";")[0]?.trim() ?? "image/png";
   const base64 = buffer.toString("base64");
@@ -201,37 +208,52 @@ export async function parseScreenshotBuffer(
   const ai = new GoogleGenAI({ apiKey });
 
   try {
-    const response = await ai.models.generateContent({
-      model,
-      contents: [
-        {
-          inlineData: {
-            mimeType: normalizedMime,
-            data: base64,
+    return await withGeminiModelFallback({
+      models,
+      retriesPerModel: 1,
+      baseDelayMs: 800,
+      run: async (model) => {
+        const response = await ai.models.generateContent({
+          model,
+          contents: [
+            {
+              inlineData: {
+                mimeType: normalizedMime,
+                data: base64,
+              },
+            },
+            {
+              text: "Extract the full conversation from this mobile chat screenshot.",
+            },
+          ],
+          config: {
+            systemInstruction: SYSTEM_PROMPT,
+            temperature: 0.1,
+            responseMimeType: "application/json",
+            responseJsonSchema: RESPONSE_JSON_SCHEMA,
           },
-        },
-        {
-          text: "Extract the full conversation from this mobile chat screenshot.",
-        },
-      ],
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        temperature: 0.1,
-        responseMimeType: "application/json",
-        responseJsonSchema: RESPONSE_JSON_SCHEMA,
+        });
+
+        const content = response.text;
+        if (typeof content !== "string" || !content.trim()) {
+          throw new Error("Vision model returned an empty response.");
+        }
+
+        return parseVisionJson(content);
       },
     });
-
-    const content = response.text;
-    if (typeof content !== "string" || !content.trim()) {
-      throw new Error("Vision model returned an empty response.");
-    }
-
-    return parseVisionJson(content);
   } catch (error) {
-    if (error instanceof Error) {
+    if (
+      error instanceof Error &&
+      (error.message.includes("not configured") ||
+        error.message.includes("Unsupported") ||
+        error.message.includes("too large") ||
+        error.message.includes("empty") ||
+        error.message.includes("Vision model") ||
+        error.message.includes("temporarily overloaded"))
+    ) {
       throw error;
     }
-    throw new Error("Vision API request failed.");
+    throw new Error(formatGeminiError(error, "Vision API request failed."));
   }
 }

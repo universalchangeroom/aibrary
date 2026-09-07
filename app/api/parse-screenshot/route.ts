@@ -64,12 +64,18 @@ export async function POST(request: Request) {
       message.includes("too large") ||
       message.includes("empty")
         ? 400
-        : 422;
+        : message.includes("overloaded") ||
+            message.includes("high demand") ||
+            message.includes("try again")
+          ? 503
+          : 422;
 
     return NextResponse.json(
       {
         success: false,
-        error: message,
+        error: message.startsWith("{")
+          ? "Gemini is temporarily overloaded. Please try again in a moment."
+          : message,
       },
       { status }
     );

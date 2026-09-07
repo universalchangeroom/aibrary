@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { summarizeTranscript } from "@/lib/summarize-transcript";
 
-/** POST { transcript } → { summary } via Gemini 1.5 Flash (GEMINI_API_KEY). */
+/** POST { transcript } → { summary } via Gemini Flash (GEMINI_API_KEY). */
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
