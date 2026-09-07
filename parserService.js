@@ -1015,16 +1015,26 @@ function containsMarkdownImage(line) {
   return /!\[[^\]]*\]\([^)\s]+[^)]*\)/.test(String(line || ""));
 }
 
-/** Bookmarklet placeholder for image-only assistant turns. */
+/** Bookmarklet placeholders for media-only assistant turns. */
 function containsAiGeneratedImageMarker(text) {
   return /\[AI Generated Image\]/i.test(String(text || ""));
 }
 
-/** True when a turn has plain text and/or image Markdown (not empty whitespace). */
+function containsAiGeneratedVideoMarker(text) {
+  return /\[AI Generated Video\]\([^)\s]+[^)]*\)/i.test(String(text || ""));
+}
+
+/** True when a turn has plain text and/or image/video Markdown (not empty whitespace). */
 function hasTurnContent(text) {
   const t = String(text || "").trim();
   if (!t) return false;
-  if (containsMarkdownImage(t) || containsAiGeneratedImageMarker(t)) return true;
+  if (
+    containsMarkdownImage(t) ||
+    containsAiGeneratedImageMarker(t) ||
+    containsAiGeneratedVideoMarker(t)
+  ) {
+    return true;
+  }
   return t.length > 0;
 }
 
@@ -1043,6 +1053,7 @@ function isDateTimeHeaderLine(line) {
   if (
     containsMarkdownImage(trimmed) ||
     containsAiGeneratedImageMarker(trimmed) ||
+    containsAiGeneratedVideoMarker(trimmed) ||
     trimmed.startsWith("![")
   ) {
     return false;
@@ -1181,7 +1192,9 @@ function buildAssistantMessage(content, reasoning) {
   let main = sanitizeMessageContent(extracted.content || "");
   if (
     !main &&
-    (containsMarkdownImage(content) || containsAiGeneratedImageMarker(content))
+    (containsMarkdownImage(content) ||
+      containsAiGeneratedImageMarker(content) ||
+      containsAiGeneratedVideoMarker(content))
   ) {
     main = sanitizeMessageContent(content);
   }
@@ -1362,6 +1375,7 @@ function parseRawText(text) {
           (line) =>
             containsMarkdownImage(line) ||
             containsAiGeneratedImageMarker(line) ||
+            containsAiGeneratedVideoMarker(line) ||
             !isDateTimeHeaderLine(line)
         )
         .join("\n")

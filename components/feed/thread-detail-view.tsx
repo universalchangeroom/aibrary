@@ -637,7 +637,7 @@ export function ThreadDetailView({
           role="status"
           className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
         >
-          Your thread contains image content and has been submitted for admin
+          Your thread contains image or video content and has been submitted for admin
           review before appearing on the public feed.
         </div>
       ) : null}

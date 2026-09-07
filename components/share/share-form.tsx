@@ -289,7 +289,7 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
           window.sessionStorage.setItem(
             "chatshare_publish_notice",
             payload.message ||
-              "Your thread contains image content and has been submitted for admin review before appearing on the public feed."
+              "Your thread contains image or video content and has been submitted for admin review before appearing on the public feed."
           );
         }
       }

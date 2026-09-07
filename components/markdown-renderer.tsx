@@ -34,9 +34,25 @@ type ImgProps = ComponentPropsWithoutRef<"img"> & {
   node?: unknown;
 };
 
+type AnchorProps = ComponentPropsWithoutRef<"a"> & {
+  node?: unknown;
+};
+
 function languageFromClassName(className?: string): string {
   const match = /language-([\w#+-]+)/.exec(className ?? "");
   return match?.[1] ?? "text";
+}
+
+/** Flatten react-markdown children into plain text for link-label checks. */
+function childrenToPlainText(children: ReactNode): string {
+  if (children == null || typeof children === "boolean") return "";
+  if (typeof children === "string" || typeof children === "number") {
+    return String(children);
+  }
+  if (Array.isArray(children)) {
+    return children.map(childrenToPlainText).join("");
+  }
+  return "";
 }
 
 function CodeBlock({ language, code }: { language: string; code: string }) {
@@ -230,6 +246,69 @@ function MarkdownImage({ src, alt, title, className, ...rest }: ImgProps) {
   );
 }
 
+/**
+ * Bookmarklet video pseudo-links: `[AI Generated Video](https://…)` → compact player.
+ * All other anchors keep default new-tab link behavior.
+ */
+function MarkdownAnchor({ href, children, className, ...rest }: AnchorProps) {
+  const linkText = childrenToPlainText(children);
+  const isAiVideo = linkText.includes("AI Generated Video");
+  const src = typeof href === "string" ? href.trim() : "";
+
+  if (isAiVideo && src && /^https?:\/\//i.test(src)) {
+    return (
+      <div
+        className={cn(
+          "ai-video-block my-2 overflow-hidden rounded-md border border-amber-900/20 bg-stone-900/5 shadow-sm",
+          className
+        )}
+      >
+        <video
+          src={src}
+          controls
+          playsInline
+          preload="metadata"
+          className="ai-video-player max-h-40 w-full rounded-md bg-black object-contain"
+        >
+          <a
+            href={src}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-amber-700 underline hover:text-amber-900"
+          >
+            AI Generated Video
+          </a>
+        </video>
+        {/* Screen: hidden. PDF/print stylesheet reveals this and hides <video>. */}
+        <div
+          className="ai-video-print-placeholder hidden border border-dashed border-amber-900/30 bg-amber-50/80 px-3 py-2.5 text-sm text-stone-800 print:block"
+          data-video-url={src}
+        >
+          <p className="m-0 font-medium leading-snug">
+            🎥 [AI Generated Video: view online to play]
+          </p>
+          <p className="m-0 mt-1 break-all text-xs text-stone-600">{src}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(
+        "font-medium text-amber-700 underline underline-offset-2 hover:text-amber-900",
+        className
+      )}
+      {...rest}
+    >
+      {children}
+    </a>
+  );
+}
+
 const proseClassName = cn(
   // Conversation preview: tight vertical rhythm (no typography plugin —
   // prose-p:* equivalents via [&_…] so margins actually apply).
@@ -268,11 +347,7 @@ function MarkdownDocument({ content }: { content: string }) {
         // Avoid nested <pre> wrappers around our SyntaxHighlighter frame.
         pre: ({ children }) => <>{children}</>,
         img: MarkdownImage,
-        a: ({ href, children, ...rest }) => (
-          <a href={href} target="_blank" rel="noopener noreferrer" {...rest}>
-            {children}
-          </a>
-        ),
+        a: MarkdownAnchor,
       }}
     >
       {content}

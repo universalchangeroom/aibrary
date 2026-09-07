@@ -66,6 +66,38 @@ const PDF_STYLES = `
     color: #1d4ed8;
     text-decoration: underline;
   }
+  /* AI videos: hide the player; show a text placeholder instead. */
+  video,
+  .ai-video-player {
+    display: none !important;
+  }
+  .ai-video-print-placeholder {
+    display: block !important;
+    margin: 0.75em 0;
+    padding: 0.75em 1em;
+    border: 1px dashed #d6d3d1;
+    border-radius: 6px;
+    background: #fffbeb;
+    color: #1c1917;
+    font-size: 11pt;
+    line-height: 1.45;
+    page-break-inside: avoid;
+  }
+  .ai-video-print-placeholder p {
+    margin: 0;
+  }
+  .ai-video-print-placeholder p + p {
+    margin-top: 0.35em;
+    font-size: 9pt;
+    color: #57534e;
+    word-break: break-all;
+  }
+  .ai-video-block {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
 `;
 
 type GeneratePdfBody = {
@@ -84,8 +116,38 @@ function sanitizeFilename(title: string): string {
   return safe.toLowerCase().endsWith(".pdf") ? safe : `${safe}.pdf`;
 }
 
+/**
+ * Ensure every <video src="…"> has an adjacent print placeholder with the URL,
+ * even if the client HTML omitted one.
+ */
+function ensureVideoPrintPlaceholders(html: string): string {
+  return html.replace(
+    /<video\b([^>]*)>([\s\S]*?)<\/video>(\s*<div\b[^>]*\bai-video-print-placeholder\b[^>]*>[\s\S]*?<\/div>)?/gi,
+    (full, attrs: string, inner: string, existingPlaceholder?: string) => {
+      if (existingPlaceholder) return full;
+
+      const srcMatch =
+        /\bsrc\s*=\s*(["'])(.*?)\1/i.exec(attrs) ||
+        /\bsrc\s*=\s*(["'])(.*?)\1/i.exec(inner);
+      const src = srcMatch?.[2]?.trim() ?? "";
+      const safeSrc = src
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+      const placeholder = `<div class="ai-video-print-placeholder"${
+        src ? ` data-video-url="${safeSrc}"` : ""
+      }><p>🎥 [AI Generated Video: view online to play]</p>${
+        src ? `<p>${safeSrc}</p>` : ""
+      }</div>`;
+
+      return `${full}${placeholder}`;
+    }
+  );
+}
+
 function wrapHtmlDocument(htmlContent: string): string {
-  const trimmed = htmlContent.trim();
+  const trimmed = ensureVideoPrintPlaceholders(htmlContent.trim());
   const looksComplete =
     /^<!DOCTYPE/i.test(trimmed) || /^<html[\s>]/i.test(trimmed);
 
