@@ -196,7 +196,11 @@ export function ShareWorkspace() {
           <BookmarkletCard />
         </TabsContent>
 
-        <TabsContent value="paste" className="mt-6 space-y-6">
+        <TabsContent
+          value="paste"
+          forceMount
+          className="mt-6 space-y-6 data-[state=inactive]:hidden"
+        >
           <Card>
             <CardHeader>
               <CardTitle className="text-xl">Paste transcript</CardTitle>
@@ -213,7 +217,11 @@ export function ShareWorkspace() {
           <BookmarkletCard />
         </TabsContent>
 
-        <TabsContent value="screenshot" className="mt-6 space-y-6">
+        <TabsContent
+          value="screenshot"
+          forceMount
+          className="mt-6 space-y-6 data-[state=inactive]:hidden"
+        >
           <Card>
             <CardHeader>
               <CardTitle className="text-xl">Upload screenshot</CardTitle>

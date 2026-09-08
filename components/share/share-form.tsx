@@ -35,6 +35,7 @@ import {
   readBookmarkletSourceModel,
   SHARE_SOURCE_MODEL_LABELS,
   SHARE_SOURCE_MODELS,
+  type ShareSourceModel,
 } from "@/lib/share-source-model";
 import { suggestTags } from "@/lib/suggest-tags";
 import { createClient } from "@/lib/supabase/client";
@@ -192,8 +193,8 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
     }
 
     // Prefer controlled Select state; fall back to bookmarklet URL/session mapping.
-    const resolvedModel =
-      sourceModel.trim() || readBookmarkletSourceModel(searchParams);
+    const resolvedModel: ShareSourceModel | "" =
+      sourceModel || readBookmarkletSourceModel(searchParams);
     if (!resolvedModel) {
       setError("Please choose a source model.");
       return;
@@ -375,7 +376,7 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
         <Select
           value={sourceModel || undefined}
           onValueChange={(value) => {
-            setSourceModel(value);
+            setSourceModel(value as ShareSourceModel);
             sourceModelHydratedRef.current = true;
             setError((prev) =>
               prev === "Please choose a source model." ? null : prev
@@ -419,6 +420,7 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
                 isSummarizing ||
                 !transcriptText.trim()
               }
+              className="disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSummarizing ? (
                 <>
@@ -492,7 +494,7 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
             id="summary"
             value={summary}
             onChange={(event) => setSummary(event.target.value)}
-            placeholder="Click Generate Summary, or write your own 1–2 sentence TL;DR…"
+            placeholder="Import or paste a conversation, then click Generate Summary..."
             rows={3}
             disabled={isSubmitting || isSummarizing}
             className="min-h-[4.5rem] resize-y"

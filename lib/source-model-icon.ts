@@ -5,6 +5,7 @@ export type SourceModelPlatform =
   | "grok"
   | "claude"
   | "chatgpt"
+  | "meta-ai"
   | "poe"
   | "perplexity"
   | "unknown";
@@ -19,6 +20,7 @@ const FAVICON_DOMAINS: Record<
   grok: "grok.com",
   claude: "claude.ai",
   chatgpt: "chatgpt.com",
+  "meta-ai": "meta.ai",
   poe: "poe.com",
   perplexity: "perplexity.ai",
 };
@@ -36,6 +38,7 @@ export function resolveSourceModelPlatform(
   if (/\bgrok\b/.test(model)) return "grok";
   if (/claude|sonnet|opus|haiku/.test(model)) return "claude";
   if (/chatgpt|\bgpt\b|openai|\b4o\b|\bo[134]\b/.test(model)) return "chatgpt";
+  if (/meta[\s-]*ai|\bllama\b/.test(model)) return "meta-ai";
   if (/\bpoe\b/.test(model)) return "poe";
   if (/perplexity/.test(model)) return "perplexity";
 

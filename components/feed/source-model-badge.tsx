@@ -1,6 +1,7 @@
 import { Bot } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { sourceModelDisplayName } from "@/lib/share-source-model";
 import { sourceModelFaviconUrl } from "@/lib/source-model-icon";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +15,7 @@ export function SourceModelBadge({
   className,
 }: SourceModelBadgeProps) {
   const faviconUrl = sourceModelFaviconUrl(sourceModel);
+  const displayName = sourceModelDisplayName(sourceModel);
 
   return (
     <Badge variant="secondary" className={cn("gap-1.5", className)}>
@@ -29,7 +31,7 @@ export function SourceModelBadge({
       ) : (
         <Bot className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
       )}
-      <span>{sourceModel}</span>
+      <span>{displayName}</span>
     </Badge>
   );
 }

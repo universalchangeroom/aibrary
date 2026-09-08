@@ -98,8 +98,10 @@ type ScreenshotImportPanelProps = {
   onParsed?: (preview: ScreenshotParsedPreview, transcript: string) => void;
   editorRef?: React.RefObject<RichTextEditorHandle>;
   /** Ref attached to the Conversation Preview container for PDF export. */
-  previewContainerRef?: RefObject<HTMLDivElement | null>;
+  previewContainerRef?: RefObject<HTMLDivElement>;
   disabled?: boolean;
+  /** Always-mounted staging controls shown before the conditional preview. */
+  persistentControls?: ReactNode;
   footer?: ReactNode;
 };
 
@@ -114,6 +116,7 @@ export function ScreenshotImportPanel({
   editorRef,
   previewContainerRef,
   disabled = false,
+  persistentControls,
   footer,
 }: ScreenshotImportPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -185,9 +188,12 @@ export function ScreenshotImportPanel({
 
   if (isParsing) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-md border border-dashed px-4 py-10 text-sm text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin" />
-        Reading screenshot and extracting conversation…
+      <div className="space-y-4">
+        <div className="flex items-center justify-center gap-2 rounded-md border border-dashed px-4 py-10 text-sm text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Reading screenshot and extracting conversation…
+        </div>
+        {persistentControls}
       </div>
     );
   }
@@ -250,6 +256,8 @@ export function ScreenshotImportPanel({
         A vision model detects User vs AI turns and rebuilds Markdown (code
         blocks, lists, and formatting preserved).
       </p>
+
+      {persistentControls}
 
       {preview && preview.messages.length > 0 ? (
         <>

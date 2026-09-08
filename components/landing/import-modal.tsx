@@ -448,7 +448,7 @@ export function ImportModal({
   }, [clipboardNotice]);
 
   function sourceModelFromResult(preview: ParsedPreview): string {
-    return resolveShareSourceModel(preview.source) || "Other";
+    return resolveShareSourceModel(preview.source) || "other";
   }
 
   /**

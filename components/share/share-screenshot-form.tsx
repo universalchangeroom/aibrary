@@ -34,7 +34,7 @@ import { suggestTags } from "@/lib/suggest-tags";
 import { createClient } from "@/lib/supabase/client";
 
 function inferSourceModel(source: string): string {
-  return resolveShareSourceModel(source) || "Other";
+  return resolveShareSourceModel(source) || "other";
 }
 
 function pdfDownloadFilename(title: string): string {
@@ -299,6 +299,98 @@ export function ShareScreenshotForm() {
     }
   }
 
+  const persistentControls = (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <Label htmlFor="share-screenshot-tags">Tags</Label>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleSuggestTags}
+              disabled={
+                isSubmitting ||
+                isGeneratingPdf ||
+                isSummarizing ||
+                !rawText.trim()
+              }
+            >
+              <Sparkles className="h-4 w-4" />
+              Suggest Tags
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleGenerateSummary()}
+              disabled={
+                isSubmitting ||
+                isGeneratingPdf ||
+                isSummarizing ||
+                !rawText.trim()
+              }
+              className="disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isSummarizing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Summarizing…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  Generate Summary
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+        <Input
+          id="share-screenshot-tags"
+          value={tagsInput}
+          onChange={(event) => setTagsInput(event.target.value)}
+          placeholder="nextjs, react, debugging"
+          disabled={isSubmitting || isGeneratingPdf || isSummarizing}
+        />
+        {visibleSuggestedTags.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+            {visibleSuggestedTags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => appendSuggestedTag(tag)}
+                className="focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                aria-label={`Add tag ${tag}`}
+              >
+                <Badge
+                  variant="outline"
+                  className="cursor-pointer border-dashed hover:border-primary hover:bg-primary/5"
+                >
+                  + {tag}
+                </Badge>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="share-screenshot-summary">Summary (TL;DR)</Label>
+        <Textarea
+          id="share-screenshot-summary"
+          value={summary}
+          onChange={(event) => setSummary(event.target.value)}
+          placeholder="Import or paste a conversation, then click Generate Summary..."
+          rows={3}
+          disabled={isSubmitting || isGeneratingPdf}
+          className="min-h-[4.5rem] resize-y"
+        />
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-4">
       <ScreenshotImportPanel
@@ -317,6 +409,7 @@ export function ShareScreenshotForm() {
         editorRef={editorRef}
         previewContainerRef={previewRef}
         disabled={isSubmitting || isParsing || isGeneratingPdf}
+        persistentControls={persistentControls}
         footer={
           preview ? (
             <>
@@ -334,93 +427,6 @@ export function ShareScreenshotForm() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-end justify-between gap-2">
-                  <Label htmlFor="share-screenshot-tags">Tags</Label>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleSuggestTags}
-                      disabled={
-                        isSubmitting ||
-                        isGeneratingPdf ||
-                        isSummarizing ||
-                        !rawText.trim()
-                      }
-                    >
-                      <Sparkles className="h-4 w-4" />
-                      Suggest Tags
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void handleGenerateSummary()}
-                      disabled={
-                        isSubmitting ||
-                        isGeneratingPdf ||
-                        isSummarizing ||
-                        !rawText.trim()
-                      }
-                    >
-                      {isSummarizing ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Summarizing…
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="h-4 w-4" />
-                          Generate Summary
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-                <Input
-                  id="share-screenshot-tags"
-                  value={tagsInput}
-                  onChange={(event) => setTagsInput(event.target.value)}
-                  placeholder="nextjs, react, debugging"
-                  disabled={isSubmitting || isGeneratingPdf || isSummarizing}
-                />
-                {visibleSuggestedTags.length > 0 ? (
-                  <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                    {visibleSuggestedTags.map((tag) => (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => appendSuggestedTag(tag)}
-                        className="focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        aria-label={`Add tag ${tag}`}
-                      >
-                        <Badge
-                          variant="outline"
-                          className="cursor-pointer border-dashed hover:border-primary hover:bg-primary/5"
-                        >
-                          + {tag}
-                        </Badge>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="share-screenshot-summary">Summary (TL;DR)</Label>
-                <Textarea
-                  id="share-screenshot-summary"
-                  value={summary}
-                  onChange={(event) => setSummary(event.target.value)}
-                  placeholder="Click Generate Summary, or write your own 1–2 sentence TL;DR…"
-                  rows={3}
-                  disabled={isSubmitting || isSummarizing || isGeneratingPdf}
-                  className="min-h-[4.5rem] resize-y"
-                />
               </div>
 
               <div className="flex flex-wrap items-center gap-3">

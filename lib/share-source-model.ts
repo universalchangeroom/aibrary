@@ -1,21 +1,31 @@
-/** Fixed options used by share / paste Source Model selects. */
+/** Stable platform families used by all share Source Model selects. */
 export const SHARE_SOURCE_MODELS = [
-  "Claude 3.5 Sonnet",
-  "Gemini 1.5 Pro",
-  "DeepSeek-R1",
-  "GPT-4o",
-  "Grok 2",
-  "Copilot",
-  "Other",
+  "chatgpt",
+  "claude",
+  "gemini",
+  "copilot",
+  "deepseek",
+  "meta-ai",
+  "grok",
+  "perplexity",
+  "other",
 ] as const;
 
 export type ShareSourceModel = (typeof SHARE_SOURCE_MODELS)[number];
 
-/** Display labels for options that prefer a friendlier name in the UI. */
-export const SHARE_SOURCE_MODEL_LABELS: Partial<
+/** Clean display labels for stable stored values. */
+export const SHARE_SOURCE_MODEL_LABELS: Readonly<
   Record<ShareSourceModel, string>
 > = {
-  Copilot: "Microsoft Copilot",
+  chatgpt: "ChatGPT",
+  claude: "Claude",
+  gemini: "Gemini",
+  copilot: "Microsoft Copilot",
+  deepseek: "DeepSeek",
+  "meta-ai": "Meta AI",
+  grok: "Grok",
+  perplexity: "Perplexity",
+  other: "Other",
 };
 
 function normalizeToken(value: string): string {
@@ -34,7 +44,13 @@ function matchExactOption(value: string): ShareSourceModel | "" {
     (option) => option.toLowerCase() === trimmed.toLowerCase()
   );
   if (hit) return hit as ShareSourceModel;
-  if (/^microsoft\s+copilot$/i.test(trimmed)) return "Copilot";
+
+  const labelHit = SHARE_SOURCE_MODELS.find(
+    (option) =>
+      SHARE_SOURCE_MODEL_LABELS[option].toLowerCase() === trimmed.toLowerCase()
+  );
+  if (labelHit) return labelHit;
+
   return "";
 }
 
@@ -58,13 +74,14 @@ export function resolveShareSourceModel(
   if (exactPlatform) return exactPlatform;
 
   // Model-string hints first (more specific than platform).
-  if (/copilot|microsoft\s+copilot/.test(m)) return "Copilot";
-  if (/gpt-4o|chatgpt\s*4o|\b4o\b/.test(m)) return "GPT-4o";
-  if (/grok/.test(m)) return "Grok 2";
-  if (/deepseek|deepthink|\br1\b/.test(m)) return "DeepSeek-R1";
-  if (/claude|sonnet|opus|haiku/.test(m)) return "Claude 3.5 Sonnet";
-  if (/gemini|flash|ultra/.test(m)) return "Gemini 1.5 Pro";
-  if (/chatgpt|gpt|o1|o3|o4|openai/.test(m)) return "GPT-4o";
+  if (/copilot|microsoft\s+copilot/.test(m)) return "copilot";
+  if (/grok/.test(m)) return "grok";
+  if (/deepseek|deepthink|\br1\b/.test(m)) return "deepseek";
+  if (/claude|sonnet|opus|haiku/.test(m)) return "claude";
+  if (/gemini|flash|ultra|bard/.test(m)) return "gemini";
+  if (/perplexity|sonar/.test(m)) return "perplexity";
+  if (/meta[\s-]*ai|\bllama\b/.test(m)) return "meta-ai";
+  if (/chatgpt|gpt|o1|o3|o4|openai|\b4o\b/.test(m)) return "chatgpt";
 
   // Platform / hostname from bookmarklet `source` (or domain fallbacks).
   if (
@@ -73,7 +90,7 @@ export function resolveShareSourceModel(
     p === "copilot" ||
     combined.includes("copilot")
   ) {
-    return "Copilot";
+    return "copilot";
   }
   if (
     p.includes("chatgpt.com") ||
@@ -81,13 +98,13 @@ export function resolveShareSourceModel(
     p === "chatgpt" ||
     p.includes("openai")
   ) {
-    return "GPT-4o";
+    return "chatgpt";
   }
   if (p.includes("gemini.google.com") || p === "gemini" || p.includes("gemini")) {
-    return "Gemini 1.5 Pro";
+    return "gemini";
   }
   if (p.includes("claude.ai") || p === "claude" || p.includes("claude")) {
-    return "Claude 3.5 Sonnet";
+    return "claude";
   }
   if (
     p.includes("chat.deepseek.com") ||
@@ -95,7 +112,7 @@ export function resolveShareSourceModel(
     p === "deepseek" ||
     p.includes("deepseek")
   ) {
-    return "DeepSeek-R1";
+    return "deepseek";
   }
   if (
     p === "x.com" ||
@@ -105,12 +122,30 @@ export function resolveShareSourceModel(
     p === "grok" ||
     p.includes("grok")
   ) {
-    return "Grok 2";
+    return "grok";
   }
-  if (p.includes("perplexity")) return "Other";
+  if (p.includes("perplexity")) return "perplexity";
+  if (p.includes("meta.ai") || p === "meta-ai" || p.includes("meta ai")) {
+    return "meta-ai";
+  }
 
-  if (platform || scraped) return "Other";
+  if (platform || scraped) return "other";
   return "";
+}
+
+/** Canonicalize new values and legacy point-version labels for storage. */
+export function normalizeSourceModelForStorage(
+  value?: string | null
+): ShareSourceModel | null {
+  const resolved = resolveShareSourceModel(value);
+  return resolved || null;
+}
+
+/** Render canonical names for both new slugs and legacy database values. */
+export function sourceModelDisplayName(value?: string | null): string {
+  const resolved = resolveShareSourceModel(value);
+  if (!resolved) return "Other";
+  return SHARE_SOURCE_MODEL_LABELS[resolved];
 }
 
 /** Read bookmarklet handoff params from the URL and/or sessionStorage. */

@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 import { getHonestStartBalance } from "@/lib/props-balance";
+import { normalizeSourceModelForStorage } from "@/lib/share-source-model";
 import { asChatMessages } from "@/lib/types";
 import { parseRawText } from "@/lib/parse-raw-text";
 import {
@@ -54,26 +55,11 @@ function isMessageArray(value: unknown): value is { role: "user" | "assistant" |
 
 function sourceModelFromPayload(body: PublishThreadBody): string | null {
   if (typeof body.source_model === "string" && body.source_model.trim()) {
-    return body.source_model.trim();
+    return normalizeSourceModelForStorage(body.source_model);
   }
 
   if (typeof body.source === "string") {
-    switch (body.source) {
-      case "ChatGPT":
-        return "GPT-4o";
-      case "Claude":
-        return "Claude 3.5 Sonnet";
-      case "DeepSeek":
-        return "DeepSeek";
-      case "Gemini":
-        return "Gemini";
-      case "Perplexity":
-        return "Other";
-      case "Pasted Text":
-        return "Other";
-      default:
-        return body.source;
-    }
+    return normalizeSourceModelForStorage(body.source);
   }
 
   return null;
