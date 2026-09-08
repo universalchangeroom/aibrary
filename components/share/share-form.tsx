@@ -372,6 +372,43 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
       </div>
 
       <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="summary">Summary (TL;DR)</Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void handleGenerateSummary()}
+            disabled={
+              !transcriptText.trim() || isSubmitting || isSummarizing
+            }
+            className="shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSummarizing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Summarizing…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4" />
+                Generate Summary
+              </>
+            )}
+          </Button>
+        </div>
+        <Textarea
+          id="summary"
+          value={summary}
+          onChange={(event) => setSummary(event.target.value)}
+          placeholder="Import or paste a conversation, then click Generate Summary..."
+          rows={2}
+          disabled={isSubmitting}
+          className="min-h-[3.75rem] resize-y"
+        />
+      </div>
+
+      <div className="space-y-2">
         <Label htmlFor="source-model">Source Model</Label>
         <Select
           value={sourceModel || undefined}
@@ -399,42 +436,16 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
       <div className="space-y-2">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <Label htmlFor="tags">Tags</Label>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleSuggestTags}
-              disabled={isSubmitting || isSummarizing || !transcriptText.trim()}
-            >
-              <Sparkles className="h-4 w-4" />
-              Suggest Tags
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void handleGenerateSummary()}
-              disabled={
-                isSubmitting ||
-                isSummarizing ||
-                !transcriptText.trim()
-              }
-              className="disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isSummarizing ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Summarizing…
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  Generate Summary
-                </>
-              )}
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleSuggestTags}
+            disabled={isSubmitting || isSummarizing || !transcriptText.trim()}
+          >
+            <Sparkles className="h-4 w-4" />
+            Suggest Tags
+          </Button>
         </div>
         <Input
           id="tags"
@@ -487,62 +498,44 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
         </p>
       </div>
 
-      <div className="space-y-3">
-        <div className="space-y-2">
-          <Label htmlFor="summary">Summary (TL;DR)</Label>
-          <Textarea
-            id="summary"
-            value={summary}
-            onChange={(event) => setSummary(event.target.value)}
-            placeholder="Import or paste a conversation, then click Generate Summary..."
-            rows={3}
-            disabled={isSubmitting || isSummarizing}
-            className="min-h-[4.5rem] resize-y"
-          />
-          <p className="text-xs text-muted-foreground">
-            Edit freely before publishing.
-          </p>
-        </div>
-
-        {parsedConversation.messages.length > 0 ? (
-          <div
-            ref={previewRef}
-            className="rounded-md border bg-muted/40 p-4"
-          >
-            <h4 className="mb-2 text-sm font-semibold text-foreground">
-              Conversation Preview
-            </h4>
-            <div className="max-h-72 space-y-3 overflow-y-auto">
-              {parsedConversation.messages.map((msg, idx) => {
-                const isUser = msg.role === "user";
-                return (
-                  <div
-                    key={`${msg.role}-${idx}`}
+      {parsedConversation.messages.length > 0 ? (
+        <div
+          ref={previewRef}
+          className="rounded-md border bg-muted/40 p-4"
+        >
+          <h4 className="mb-2 text-sm font-semibold text-foreground">
+            Conversation Preview
+          </h4>
+          <div className="max-h-72 space-y-3 overflow-y-auto">
+            {parsedConversation.messages.map((msg, idx) => {
+              const isUser = msg.role === "user";
+              return (
+                <div
+                  key={`${msg.role}-${idx}`}
+                  className={cn(
+                    "rounded border p-3 text-sm",
+                    isUser
+                      ? "border-border bg-muted/50 text-foreground"
+                      : "border-border bg-background text-foreground"
+                  )}
+                >
+                  <span
                     className={cn(
-                      "rounded border p-3 text-sm",
+                      "mb-2 inline-block rounded px-2 py-0.5 text-xs font-bold uppercase",
                       isUser
-                        ? "border-border bg-muted/50 text-foreground"
-                        : "border-border bg-background text-foreground"
+                        ? "bg-secondary text-secondary-foreground"
+                        : "bg-primary/15 text-primary"
                     )}
                   >
-                    <span
-                      className={cn(
-                        "mb-2 inline-block rounded px-2 py-0.5 text-xs font-bold uppercase",
-                        isUser
-                          ? "bg-secondary text-secondary-foreground"
-                          : "bg-primary/15 text-primary"
-                      )}
-                    >
-                      {isUser ? "USER" : "AI"}
-                    </span>
-                    <MarkdownRenderer content={msg.content} />
-                  </div>
-                );
-              })}
-            </div>
+                    {isUser ? "USER" : "AI"}
+                  </span>
+                  <MarkdownRenderer content={msg.content} />
+                </div>
+              );
+            })}
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {error ? (
         <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
