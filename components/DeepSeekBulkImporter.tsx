@@ -539,21 +539,38 @@ export function DeepSeekBulkImporter() {
           onChange={handleFileChange}
           className="sr-only"
         />
-        <div className="mx-auto flex max-w-md flex-col items-center gap-3">
+        <div className="mx-auto flex max-w-3xl flex-col items-center gap-3">
           {isUploading ? (
             <Loader2 className="h-9 w-9 animate-spin text-amber-700" />
           ) : (
             <Upload className="h-9 w-9 text-amber-700" />
           )}
-          <div>
-            <h2 className="font-semibold text-slate-900">
-              Import conversation files
-            </h2>
-            <p className="mt-1 text-sm text-stone-600">
-              Drop DeepSeek JSON or Markdown files here. Parsing happens only
-              in this browser tab.
-            </p>
-          </div>
+          {parsedChats.length === 0 && !isUploading ? (
+            <div className="space-y-4">
+              <div>
+                <h2 className="font-semibold text-slate-900">
+                  Bulk Staging &amp; Local Refinery
+                </h2>
+                <p className="mx-auto mt-1 max-w-2xl text-sm leading-relaxed text-stone-600">
+                  Drag &amp; drop your DeepSeek conversations.json export or a
+                  batch of .md chat files. Everything parses in-memory in your
+                  browser&apos;s RAM—nothing touches the server or database
+                  until you say so.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <span className="rounded-full border border-stone-300 bg-white/80 px-3 py-1 text-xs font-medium text-slate-700">
+                  🔒 100% Private (Client-Side Memory)
+                </span>
+                <span className="rounded-full border border-amber-300 bg-amber-50/80 px-3 py-1 text-xs font-medium text-amber-900">
+                  ⚡ Publish up to 5 curated threads daily
+                </span>
+                <span className="rounded-full border border-orange-300 bg-orange-50/80 px-3 py-1 text-xs font-medium text-orange-900">
+                  📦 Bulk export unlimited Markdown ZIPs
+                </span>
+              </div>
+            </div>
+          ) : null}
           <Button
             type="button"
             variant="outline"

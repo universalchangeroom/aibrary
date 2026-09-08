@@ -498,6 +498,22 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
 
       <div className="space-y-2">
         <Label htmlFor="transcript">Raw Transcript</Label>
+        {!transcriptText.trim() ? (
+          <div className="rounded-lg border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50/60 px-4 py-3 text-sm text-slate-700">
+            <p className="font-semibold text-slate-900">
+              Paste Raw Text or Full Transcripts
+            </p>
+            <p className="mt-1 leading-relaxed">
+              Copy your conversation turn-by-turn or use &apos;Paste
+              Conversation&apos;. ChatShare automatically splits user and
+              assistant turns, cleans code syntax, and keeps formatting sharp.
+            </p>
+            <p className="mt-2 text-xs font-medium text-amber-900">
+              Tip: Long code snippets and multi-turn exchanges are preserved
+              intact.
+            </p>
+          </div>
+        ) : null}
         <RichTextEditor
           ref={editorRef}
           content={transcriptText}

@@ -229,12 +229,30 @@ export function ScreenshotImportPanel({
       >
         <ImageIcon className="h-10 w-10 text-muted-foreground" />
         <div className="space-y-1">
-          <p className="text-sm font-medium text-foreground">
-            Drop a mobile chat screenshot here
-          </p>
-          <p className="text-xs text-muted-foreground">
-            PNG, JPG, or WebP — long scrolling captures supported
-          </p>
+          {!fileName && !preview ? (
+            <div className="mx-auto max-w-2xl rounded-lg border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50/60 px-4 py-3 text-slate-700">
+              <p className="text-sm font-semibold text-slate-900">
+                Mobile Screenshot Parser
+              </p>
+              <p className="mt-1 text-sm leading-relaxed">
+                Upload a mobile chat screenshot. Our OCR parser reads the
+                dialogue directly into editable markdown blocks instead of
+                saving heavy image files.
+              </p>
+              <p className="mt-2 text-xs font-medium text-amber-900">
+                Saves storage, enables search, and allows syntax copying.
+              </p>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm font-medium text-foreground">
+                Drop a mobile chat screenshot here
+              </p>
+              <p className="text-xs text-muted-foreground">
+                PNG, JPG, or WebP — long scrolling captures supported
+              </p>
+            </>
+          )}
           {fileName ? (
             <p className="text-xs font-medium text-primary">Last file: {fileName}</p>
           ) : null}
