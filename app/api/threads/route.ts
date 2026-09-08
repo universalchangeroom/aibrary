@@ -26,6 +26,7 @@ interface PublishThreadBody {
   transcript?: unknown;
   source_model?: unknown;
   source?: unknown;
+  summary?: unknown;
   tags?: unknown;
   is_public?: unknown;
   originalUrl?: unknown;
@@ -68,7 +69,7 @@ function sourceModelFromPayload(body: PublishThreadBody): string | null {
 /**
  * POST /api/threads
  * Authorization: Bearer <supabase_access_token>
- * Body: { title, content, source_model?, tags?, is_public? }
+ * Body: { title, content, source_model?, summary?, tags?, is_public? }
  *   `content` is the jsonb transcript: [{ role, content }].
  *   Aliases: `messages` (same array), `transcript` (raw Markdown string).
  *
@@ -129,6 +130,10 @@ export async function POST(request: Request) {
   const tags = Array.isArray(body.tags)
     ? body.tags.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
     : [];
+  const summary =
+    typeof body.summary === "string" && body.summary.trim()
+      ? body.summary.trim().slice(0, 2_000)
+      : null;
   const isPublic = body.is_public !== false;
   const sourceModel = sourceModelFromPayload(body);
 
@@ -210,6 +215,7 @@ export async function POST(request: Request) {
       title,
       content: messagesToInsert,
       source_model: sourceModel,
+      summary,
       tags,
       is_public: isPublic,
       status,

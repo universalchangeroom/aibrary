@@ -265,6 +265,7 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
         body: JSON.stringify({
           title: trimmedTitle,
           source_model: resolvedModel,
+          summary: summary.trim() || null,
           tags,
           content,
           is_public: true,

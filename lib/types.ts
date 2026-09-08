@@ -19,6 +19,7 @@ export interface Thread {
   title: string;
   content: ChatMessage[];
   source_model: string | null;
+  summary?: string | null;
   tags: string[];
   is_public: boolean;
   total_tokens?: number;

@@ -85,6 +85,8 @@ create table public.threads (
   content jsonb not null default '[]'::jsonb,
   -- The AI model/source of the conversation, e.g. "gpt-4o", "claude"
   source_model text,
+  -- Editable generated or author-provided TL;DR for Discover cards
+  summary text,
   tags text[] not null default '{}',
   is_public boolean not null default false,
   -- published = public feed; pending_review = image content awaiting admin

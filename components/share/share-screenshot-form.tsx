@@ -206,6 +206,7 @@ export function ShareScreenshotForm() {
         body: JSON.stringify({
           title: trimmedTitle,
           source_model: model,
+          summary: summary.trim() || null,
           tags,
           content,
           is_public: true,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   buildImportBookmarklet,
@@ -18,12 +18,19 @@ interface BookmarkletCardProps {
  */
 export function BookmarkletCard({ className }: BookmarkletCardProps) {
   const [appOrigin, setAppOrigin] = useState(() => resolveChatShareOrigin());
+  const bookmarkletLinkRef = useRef<HTMLAnchorElement>(null);
 
   useEffect(() => {
     setAppOrigin(resolveChatShareOrigin(window.location.origin));
   }, []);
 
   const bookmarkletScript = buildImportBookmarklet(appOrigin);
+
+  useEffect(() => {
+    // React warns on javascript: JSX URLs and plans to block them. Bookmarklets
+    // still require that scheme, so attach it directly to the draggable link.
+    bookmarkletLinkRef.current?.setAttribute("href", bookmarkletScript);
+  }, [bookmarkletScript]);
 
   return (
     <div
@@ -44,7 +51,7 @@ export function BookmarkletCard({ className }: BookmarkletCardProps) {
       </div>
 
       <a
-        href={bookmarkletScript}
+        ref={bookmarkletLinkRef}
         draggable
         onClick={(e) => e.preventDefault()}
         className="inline-flex items-center cursor-grab rounded-md bg-zinc-900 px-4 py-2 font-medium text-white shadow hover:bg-black active:cursor-grabbing"
