@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 
 import { SiteHeader } from "@/components/layout/site-header";
+import { OnboardingModal } from "@/components/OnboardingModal";
 import { AppProviders } from "@/components/providers/app-providers";
 
 import "./globals.css";
@@ -35,6 +36,7 @@ export default function RootLayout({
       >
         <AppProviders>
           <SiteHeader />
+          <OnboardingModal />
           {children}
         </AppProviders>
       </body>
