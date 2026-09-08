@@ -55,6 +55,7 @@ export function ShareScreenshotForm() {
   const [preview, setPreview] = useState<ScreenshotParsedPreview | null>(null);
   const [rawText, setRawText] = useState("");
   const [sourceModel, setSourceModel] = useState<string>("");
+  const [customModelName, setCustomModelName] = useState("");
   const [tagsInput, setTagsInput] = useState("");
   const [summary, setSummary] = useState("");
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
@@ -151,9 +152,15 @@ export function ShareScreenshotForm() {
       return;
     }
 
-    const model = sourceModel || inferSourceModel(preview.source);
-    if (!model) {
+    const selectedModel = sourceModel || inferSourceModel(preview.source);
+    if (!selectedModel) {
       setError("Please choose a source model.");
+      return;
+    }
+    const model =
+      selectedModel === "other" ? customModelName.trim() : selectedModel;
+    if (!model) {
+      setError("Please enter the source model name.");
       return;
     }
 
@@ -428,6 +435,16 @@ export function ShareScreenshotForm() {
                     ))}
                   </SelectContent>
                 </Select>
+                {sourceModel === "other" ? (
+                  <Input
+                    id="share-screenshot-custom-model"
+                    value={customModelName}
+                    onChange={(event) => setCustomModelName(event.target.value)}
+                    placeholder="Enter model (e.g., Qwen2.5, Mistral Large...)"
+                    disabled={isSubmitting || isGeneratingPdf}
+                    maxLength={120}
+                  />
+                ) : null}
               </div>
 
               <div className="flex flex-wrap items-center gap-3">

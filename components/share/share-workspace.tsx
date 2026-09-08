@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ClipboardPaste, X } from "lucide-react";
 
+import { DeepSeekBulkImporter } from "@/components/DeepSeekBulkImporter";
 import { BookmarkletCard } from "@/components/import/bookmarklet-card";
-import { ImportThread } from "@/components/share/import-thread";
 import {
   ShareForm,
   type ShareFormHandle,
@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-type ShareTab = "import" | "paste" | "screenshot";
+type ShareTab = "paste" | "screenshot" | "bulk";
 
 const SHARE_TAB_LIST_CLASS =
   "flex h-auto min-h-10 w-full flex-wrap items-stretch gap-1 bg-muted p-1 [&>button]:h-auto [&>button]:min-w-[5.5rem] [&>button]:flex-1 [&>button]:whitespace-normal [&>button]:px-2 [&>button]:py-1.5 [&>button]:text-xs sm:[&>button]:text-sm";
@@ -41,7 +41,7 @@ export function ShareWorkspace() {
   const modelParam = searchParams.get("model")?.trim() || "";
 
   const shareFormRef = useRef<ShareFormHandle>(null);
-  const [tab, setTab] = useState<ShareTab>(pasteFlag ? "paste" : "import");
+  const [tab, setTab] = useState<ShareTab>("paste");
   const [showPasteBanner, setShowPasteBanner] = useState(pasteFlag);
   const [clipboardNotice, setClipboardNotice] = useState<string | null>(null);
   const [isReadingClipboard, setIsReadingClipboard] = useState(false);
@@ -75,11 +75,9 @@ export function ShareWorkspace() {
   // When user switches to Paste transcript after bookmarklet open
   function handleTabChange(value: string) {
     const next: ShareTab =
-      value === "paste"
-        ? "paste"
-        : value === "screenshot"
-          ? "screenshot"
-          : "import";
+      value === "paste" || value === "screenshot" || value === "bulk"
+        ? value
+        : "paste";
     setTab(next);
     if (next === "paste" && pasteFlag) {
       setShowPasteBanner(true);
@@ -186,15 +184,10 @@ export function ShareWorkspace() {
 
       <Tabs value={tab} onValueChange={handleTabChange} className="w-full">
         <TabsList className={SHARE_TAB_LIST_CLASS}>
-          <TabsTrigger value="import">Import link</TabsTrigger>
           <TabsTrigger value="paste">Paste transcript</TabsTrigger>
           <TabsTrigger value="screenshot">Screenshot</TabsTrigger>
+          <TabsTrigger value="bulk">Bulk Import</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="import" className="mt-6 space-y-6">
-          <ImportThread />
-          <BookmarkletCard />
-        </TabsContent>
 
         <TabsContent
           value="paste"
@@ -232,6 +225,21 @@ export function ShareWorkspace() {
             </CardHeader>
             <CardContent>
               <ShareScreenshotForm />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="bulk" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-xl">Bulk Import</CardTitle>
+              <CardDescription>
+                Review conversations from JSON exports or Markdown files. Files
+                never leave your browser.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DeepSeekBulkImporter />
             </CardContent>
           </Card>
         </TabsContent>

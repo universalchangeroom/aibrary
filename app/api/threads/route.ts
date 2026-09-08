@@ -56,7 +56,13 @@ function isMessageArray(value: unknown): value is { role: "user" | "assistant" |
 
 function sourceModelFromPayload(body: PublishThreadBody): string | null {
   if (typeof body.source_model === "string" && body.source_model.trim()) {
-    return normalizeSourceModelForStorage(body.source_model);
+    const rawModel = body.source_model.trim().slice(0, 120);
+    const normalized = normalizeSourceModelForStorage(rawModel);
+    // Values outside the known platform families are intentional "Other"
+    // entries and should retain the model name supplied by the author.
+    return normalized === "other" && rawModel.toLowerCase() !== "other"
+      ? rawModel
+      : normalized;
   }
 
   if (typeof body.source === "string") {

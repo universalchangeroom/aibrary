@@ -70,6 +70,7 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
   const [sourceModel, setSourceModel] = useState(() =>
     readBookmarkletSourceModel(searchParams)
   );
+  const [customModelName, setCustomModelName] = useState("");
   const [tagsInput, setTagsInput] = useState("");
   const [transcriptText, setTranscriptText] = useState("");
   const [summary, setSummary] = useState("");
@@ -202,6 +203,12 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
     if (resolvedModel !== sourceModel) {
       setSourceModel(resolvedModel);
     }
+    const modelToSubmit =
+      resolvedModel === "other" ? customModelName.trim() : resolvedModel;
+    if (!modelToSubmit) {
+      setError("Please enter the source model name.");
+      return;
+    }
 
     // Flush TipTap on Publish — React state can lag one paste/update behind.
     const markdown =
@@ -264,7 +271,7 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
         },
         body: JSON.stringify({
           title: trimmedTitle,
-          source_model: resolvedModel,
+          source_model: modelToSubmit,
           summary: summary.trim() || null,
           tags,
           content,
@@ -432,6 +439,16 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
             ))}
           </SelectContent>
         </Select>
+        {sourceModel === "other" ? (
+          <Input
+            id="custom-model-name"
+            value={customModelName}
+            onChange={(event) => setCustomModelName(event.target.value)}
+            placeholder="Enter model (e.g., Qwen2.5, Mistral Large...)"
+            disabled={isSubmitting}
+            maxLength={120}
+          />
+        ) : null}
       </div>
 
       <div className="space-y-2">
