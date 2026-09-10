@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { Plus } from "lucide-react";
 
 import { ThreadList } from "@/components/feed/thread-list";
-import { FormattedTime } from "@/components/formatted-time";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -110,7 +109,7 @@ async function resolveProfile(
   if (isUuid(decoded)) {
     const { data } = await supabase
       .from("profiles")
-      .select("id, username, display_name, bio, avatar_url, created_at")
+      .select("id, username")
       .eq("id", decoded)
       .maybeSingle();
     return asAuthorProfile(data);
@@ -118,7 +117,7 @@ async function resolveProfile(
 
   const { data } = await supabase
     .from("profiles")
-    .select("id, username, display_name, bio, avatar_url, created_at")
+    .select("id, username")
     .eq("username", decoded)
     .maybeSingle();
 
@@ -146,29 +145,11 @@ export default async function PublicPortfolioPage({
   await enrichAuthorsWithEmails(enrichMap);
   profile = enrichMap.get(profile.id) ?? profile;
 
-  const trimmedDisplayName = profile.display_name?.trim() || null;
-  const trimmedUsername = profile.username?.trim().replace(/^@/, "") || null;
-
-  // Prefer display_name; fall back to @username, then email prefix / Anonymous.
-  const headline = trimmedDisplayName
-    ? trimmedDisplayName
-    : trimmedUsername
-      ? `@${trimmedUsername}`
-      : authorDisplayName(profile);
-
-  // Show @username under the display name when both exist (avoid duplicating the headline).
-  const handleLabel =
-    trimmedDisplayName && trimmedUsername ? `@${trimmedUsername}` : null;
-
-  const bioText = profile.bio?.trim() || null;
-  const avatarInitial = (
-    trimmedDisplayName ||
-    trimmedUsername ||
-    (headline === "Anonymous" ? "?" : headline)
-  )
-    .replace(/^@/, "")
-    .charAt(0)
-    .toUpperCase();
+  const username =
+    profile.username?.trim().replace(/^@/, "") ||
+    authorDisplayName(profile).replace(/^@/, "") ||
+    "anonymous";
+  const pageTitle = `@${username}'s Chats`;
 
   const {
     data: { user },
@@ -227,47 +208,11 @@ export default async function PublicPortfolioPage({
 
   return (
     <div className="min-h-[calc(100vh-3.5rem)] bg-gradient-to-br from-orange-50 via-amber-50 to-rose-50 text-stone-800">
-      <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-16">
-        <header className="space-y-3 rounded-xl bg-gradient-to-r from-amber-500/10 via-orange-400/10 to-transparent px-4 py-6">
-          <div className="flex items-center gap-4">
-            {profile.avatar_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={profile.avatar_url}
-                alt=""
-                className="h-14 w-14 rounded-full object-cover ring-2 ring-orange-200"
-              />
-            ) : (
-              <div
-                className="flex h-14 w-14 items-center justify-center rounded-full bg-orange-100 text-lg font-semibold text-orange-800"
-                aria-hidden
-              >
-                {avatarInitial || "?"}
-              </div>
-            )}
-            <div className="min-w-0 space-y-1">
-              <h1 className="truncate text-3xl font-bold tracking-tight text-gray-900">
-                {headline}
-              </h1>
-              {handleLabel ? (
-                <p className="text-sm font-medium text-stone-700">{handleLabel}</p>
-              ) : null}
-              {bioText ? (
-                <p className="max-w-prose text-sm leading-relaxed text-stone-600">
-                  {bioText}
-                </p>
-              ) : null}
-              {profile.created_at ? (
-                <p className="text-xs text-stone-500">
-                  Joined{" "}
-                  <FormattedTime
-                    date={profile.created_at}
-                    className="inline text-xs text-stone-500"
-                  />
-                </p>
-              ) : null}
-            </div>
-          </div>
+      <main className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-6 py-8">
+        <header>
+          <h1 className="truncate text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
+            {pageTitle}
+          </h1>
         </header>
 
         <Tabs defaultValue="created" className="w-full">
@@ -276,7 +221,7 @@ export default async function PublicPortfolioPage({
             <TabsTrigger value="credited">Credited</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="created" className="mt-6">
+          <TabsContent value="created" className="mt-4">
             {createdThreads.length > 0 ? (
               <ThreadList threads={createdThreads} variant="discover" />
             ) : (
@@ -297,7 +242,7 @@ export default async function PublicPortfolioPage({
             )}
           </TabsContent>
 
-          <TabsContent value="credited" className="mt-6">
+          <TabsContent value="credited" className="mt-4">
             {creditedThreads.length > 0 ? (
               <ThreadList threads={creditedThreads} variant="discover" />
             ) : (

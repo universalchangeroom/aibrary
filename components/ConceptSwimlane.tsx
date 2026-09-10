@@ -25,10 +25,7 @@ export function ConceptSwimlane({
 
       <div className="flex snap-x snap-mandatory gap-6 overflow-x-auto pb-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {threads.map((thread) => (
-          <ThreadCard
-            key={`${thread.authorUsername}-${thread.title}`}
-            {...thread}
-          />
+          <ThreadCard key={thread.id} {...thread} />
         ))}
       </div>
     </section>

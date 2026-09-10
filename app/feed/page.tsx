@@ -89,12 +89,12 @@ function toThreadCards(
   return rows.map((row) => {
     const tags = normalizedTags(row);
     return {
+      id: row.id,
       title: row.title,
       summary: row.summary?.trim() || plainTextExcerpt(row.content),
       modelName: modelDisplayName(row.source_model),
       authorUsername:
-        usernamesByAuthorId.get(row.author_id)?.replace(/^@+/, "") ||
-        "anonymous",
+        usernamesByAuthorId.get(row.author_id)?.replace(/^@+/, "") || "anonymous",
       propsCount: propsCount(row),
       primaryTag: tags[0] || "Uncategorized",
     };
@@ -118,6 +118,10 @@ export default async function FeedPage() {
 
   const rows =
     !error && Array.isArray(data) ? (data as unknown as PublicThreadRow[]) : [];
+  const currentUserId = sessionData.session?.user.id ?? null;
+  const currentUserEmailPrefix =
+    sessionData.session?.user.email?.split("@")[0]?.trim().replace(/^@+/, "") ||
+    "";
   const authorIds = Array.from(
     new Set(rows.map((row) => row.author_id).filter(Boolean))
   );
@@ -135,12 +139,22 @@ export default async function FeedPage() {
         typeof profile.username === "string" &&
         profile.username.trim()
       ) {
-        usernamesByAuthorId.set(profile.id, profile.username.trim());
+        usernamesByAuthorId.set(
+          profile.id,
+          profile.username.trim().replace(/^@+/, "")
+        );
       }
     }
   }
 
-  const currentUserId = sessionData.session?.user.id ?? null;
+  if (
+    currentUserId &&
+    currentUserEmailPrefix &&
+    !usernamesByAuthorId.has(currentUserId)
+  ) {
+    usernamesByAuthorId.set(currentUserId, currentUserEmailPrefix);
+  }
+
   const fourteenDaysAgo = Date.now() - 14 * 24 * 60 * 60 * 1_000;
   const topOfTheProps = toThreadCards(
     sortByProps(rows).slice(0, 15),

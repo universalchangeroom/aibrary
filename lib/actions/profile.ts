@@ -29,25 +29,23 @@ export async function updateProfile(
   }
 
   const username = normalizeUsername(values.username);
-  const displayName = values.display_name.trim() || null;
   const bio = values.bio.trim() || null;
 
   const { data, error } = await supabase
     .from("profiles")
     .update({
       username,
-      display_name: displayName,
       bio,
     })
     .eq("id", user.id)
-    .select("username, display_name, bio")
+    .select("username, bio")
     .maybeSingle();
 
   if (error) {
     if (error.code === "23505") {
       return {
         success: false,
-        error: "That username is already taken. Please choose another.",
+        error: "Username is already claimed",
       };
     }
     return {
@@ -65,8 +63,6 @@ export async function updateProfile(
 
   const profile: ProfileFormValues = {
     username: typeof data.username === "string" ? data.username : "",
-    display_name:
-      typeof data.display_name === "string" ? data.display_name : "",
     bio: typeof data.bio === "string" ? data.bio : "",
   };
 

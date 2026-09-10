@@ -2,7 +2,6 @@
 export type AuthorProfile = {
   id: string;
   username: string | null;
-  display_name?: string | null;
   bio?: string | null;
   avatar_url?: string | null;
   created_at?: string | null;
@@ -17,15 +16,12 @@ export function isUuid(value: string): boolean {
   return UUID_RE.test(value.trim());
 }
 
-/** Visible handle for UI: username, display name, email prefix, or Anonymous. */
+/** Visible handle for UI: username, email prefix, or Anonymous. */
 export function authorDisplayName(author: AuthorProfile | null | undefined): string {
   if (!author) return "Anonymous";
 
   const username = author.username?.trim();
   if (username) return username.startsWith("@") ? username.slice(1) : username;
-
-  const displayName = author.display_name?.trim();
-  if (displayName) return displayName;
 
   const email = author.email?.trim();
   if (email) {
@@ -60,8 +56,6 @@ export function asAuthorProfile(value: unknown): AuthorProfile | null {
   return {
     id: row.id,
     username: typeof row.username === "string" ? row.username : null,
-    display_name:
-      typeof row.display_name === "string" ? row.display_name : null,
     bio: typeof row.bio === "string" ? row.bio : null,
     avatar_url: typeof row.avatar_url === "string" ? row.avatar_url : null,
     created_at: typeof row.created_at === "string" ? row.created_at : null,
@@ -116,7 +110,7 @@ export async function fetchAuthorsByIds(
 
   const { data } = await supabase
     .from("profiles")
-    .select("id, username, display_name, bio, avatar_url, created_at")
+    .select("id, username, bio, avatar_url, created_at")
     .in("id", unique);
 
   for (const row of data ?? []) {
