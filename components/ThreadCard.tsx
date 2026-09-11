@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { MouseEvent } from "react";
 
 export interface ThreadCardProps {
   id: string;
@@ -19,8 +23,16 @@ export function ThreadCard({
   propsCount,
   primaryTag,
 }: ThreadCardProps) {
+  const router = useRouter();
   const username = authorUsername.replace(/^@+/, "");
   const tag = primaryTag.replace(/^#+/, "");
+
+  function handleTagClick(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!tag) return;
+    router.push(`/tags/${encodeURIComponent(tag)}`);
+  }
 
   return (
     <Link
@@ -44,9 +56,14 @@ export function ThreadCard({
         </div>
 
         <footer className="mt-auto flex items-end justify-between gap-4 pt-6">
-          <span className="min-w-0 truncate text-sm text-orange-700 dark:text-orange-300">
+          <button
+            type="button"
+            onClick={handleTagClick}
+            className="min-w-0 truncate rounded-md px-1.5 py-0.5 text-left text-sm text-orange-700 transition-colors hover:bg-amber-500/20 hover:cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 dark:text-orange-300"
+            aria-label={`View chats tagged ${tag}`}
+          >
             #{tag}
-          </span>
+          </button>
 
           <div className="flex shrink-0 items-center gap-2 text-sm font-medium text-stone-700 dark:text-stone-300">
             <span>@{username}</span>

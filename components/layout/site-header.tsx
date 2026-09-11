@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Share2 } from "lucide-react";
+import { Plus } from "lucide-react";
 
 import { AuthNav } from "@/components/layout/auth-nav";
 import { Button } from "@/components/ui/button";
@@ -59,8 +59,8 @@ export function SiteHeader() {
               size="sm"
               className="border-transparent bg-green-600 text-white hover:bg-green-700"
             >
-              <Link href="/share">
-                <Share2 className="h-4 w-4" />
+              <Link href="/share" className="flex items-center gap-1.5">
+                <Plus className="h-4 w-4" aria-hidden />
                 Share one!
               </Link>
             </Button>

@@ -409,7 +409,7 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
           id="summary"
           value={summary}
           onChange={(event) => setSummary(event.target.value)}
-          placeholder="Import or paste a conversation, then click Generate Summary..."
+          placeholder="Write a little blurb about this chat - or click Generate Summary"
           rows={2}
           disabled={isSubmitting}
           className="min-h-[3.75rem] resize-y"
@@ -469,7 +469,7 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
           id="tags"
           value={tagsInput}
           onChange={(event) => setTagsInput(event.target.value)}
-          placeholder="nextjs, react, debugging"
+          placeholder="Enter keywords separated by commas, and/or click Suggest Tags..."
         />
         <p className="text-xs text-muted-foreground">
           Separate tags with commas. They are stored as a text array.

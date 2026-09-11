@@ -359,7 +359,7 @@ export function ShareScreenshotForm() {
           id="share-screenshot-tags"
           value={tagsInput}
           onChange={(event) => setTagsInput(event.target.value)}
-          placeholder="nextjs, react, debugging"
+          placeholder="Enter keywords separated by commas, and/or click Suggest Tags..."
           disabled={isSubmitting || isGeneratingPdf || isSummarizing}
         />
         {visibleSuggestedTags.length > 0 ? (
@@ -390,7 +390,7 @@ export function ShareScreenshotForm() {
           id="share-screenshot-summary"
           value={summary}
           onChange={(event) => setSummary(event.target.value)}
-          placeholder="Import or paste a conversation, then click Generate Summary..."
+          placeholder="Write a little blurb about this chat - or click Generate Summary"
           rows={3}
           disabled={isSubmitting || isGeneratingPdf}
           className="min-h-[4.5rem] resize-y"

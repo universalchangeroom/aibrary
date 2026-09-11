@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 import { AddFootnoteDialog } from "@/components/feed/add-footnote-dialog";
 import { AuthorLink } from "@/components/feed/author-link";
@@ -717,11 +718,24 @@ export function ThreadDetailView({
                         className="text-sm text-muted-foreground"
                       />
                     ) : null}
-                    {thread.tags.map((tag) => (
-                      <Badge key={tag} variant="outline">
-                        {tag}
-                      </Badge>
-                    ))}
+                    {thread.tags.map((tag) => {
+                      const cleanTag = tag.replace(/^#+/, "").trim();
+                      if (!cleanTag) return null;
+                      return (
+                        <Link
+                          key={tag}
+                          href={`/tags/${encodeURIComponent(cleanTag)}`}
+                          className="inline-flex"
+                        >
+                          <Badge
+                            variant="outline"
+                            className="cursor-pointer transition-colors hover:bg-amber-500/20"
+                          >
+                            #{cleanTag}
+                          </Badge>
+                        </Link>
+                      );
+                    })}
                   </div>
                   {expandState.canExpand ? (
                     <Button

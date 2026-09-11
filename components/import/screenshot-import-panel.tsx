@@ -8,7 +8,8 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { ImageIcon, Loader2 } from "lucide-react";
+import Image from "next/image";
+import { Loader2 } from "lucide-react";
 
 import { MarkdownRenderer } from "@/components/markdown-renderer";
 import {
@@ -16,7 +17,6 @@ import {
   type RichTextEditorHandle,
 } from "@/components/rich-text-editor";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { messagesToLabeledTranscript } from "@/lib/messages-to-transcript";
@@ -220,46 +220,28 @@ export function ScreenshotImportPanel({
         onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
         className={cn(
-          "flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors",
+          "flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-12 text-center transition-colors",
           dragActive
             ? "border-primary bg-primary/5"
             : "border-border bg-muted/30 hover:border-primary/50 hover:bg-muted/50",
           disabled && "pointer-events-none opacity-60"
         )}
       >
-        <ImageIcon className="h-10 w-10 text-muted-foreground" />
-        <div className="space-y-1">
-          {!fileName && !preview ? (
-            <div className="mx-auto max-w-2xl rounded-lg border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50/60 px-4 py-3 text-slate-700">
-              <p className="text-sm font-semibold text-slate-900">
-                Mobile Screenshot Parser
-              </p>
-              <p className="mt-1 text-sm leading-relaxed">
-                Upload a mobile chat screenshot. Our OCR parser reads the
-                dialogue directly into editable markdown blocks instead of
-                saving heavy image files.
-              </p>
-              <p className="mt-2 text-xs font-medium text-amber-900">
-                Saves storage, enables search, and allows syntax copying.
-              </p>
-            </div>
-          ) : (
-            <>
-              <p className="text-sm font-medium text-foreground">
-                Drop a mobile chat screenshot here
-              </p>
-              <p className="text-xs text-muted-foreground">
-                PNG, JPG, or WebP — long scrolling captures supported
-              </p>
-            </>
-          )}
-          {fileName ? (
-            <p className="text-xs font-medium text-primary">Last file: {fileName}</p>
-          ) : null}
-        </div>
-        <Button type="button" variant="secondary" size="sm" asChild>
-          <span>Choose image</span>
-        </Button>
+        <Image
+          src="/import.png"
+          alt=""
+          width={48}
+          height={48}
+          className="mb-4 h-12 w-12 opacity-70"
+        />
+        <p className="max-w-sm text-sm text-muted-foreground">
+          Drop an image file here or click to browse your device&apos;s folders
+        </p>
+        {fileName ? (
+          <p className="mt-3 text-xs font-medium text-primary">
+            Last file: {fileName}
+          </p>
+        ) : null}
         <input
           ref={inputRef}
           type="file"
@@ -269,11 +251,6 @@ export function ScreenshotImportPanel({
           disabled={disabled}
         />
       </div>
-
-      <p className="text-xs text-muted-foreground">
-        A vision model detects User vs AI turns and rebuilds Markdown (code
-        blocks, lists, and formatting preserved).
-      </p>
 
       {persistentControls}
 

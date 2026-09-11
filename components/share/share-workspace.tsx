@@ -218,10 +218,6 @@ export function ShareWorkspace() {
           <Card>
             <CardHeader>
               <CardTitle className="text-xl">Upload screenshot</CardTitle>
-              <CardDescription>
-                Drop a mobile scrolling chat screenshot to extract turns with a
-                vision model, then review and publish.
-              </CardDescription>
             </CardHeader>
             <CardContent>
               <ShareScreenshotForm />
