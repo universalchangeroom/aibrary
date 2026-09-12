@@ -29,7 +29,7 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
   const { data, error } = await supabase
     .from("threads")
     .select(
-      "id, author_id, title, content, source_model, tags, is_public, status, total_tokens, created_at, updated_at, footnotes(*)"
+      "id, author_id, title, content, source_model, tags, is_public, status, total_tokens, props_count, slop_count, created_at, updated_at, footnotes(*)"
     )
     .eq("id", id)
     .order("created_at", { ascending: true, foreignTable: "footnotes" })

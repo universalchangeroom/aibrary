@@ -1,29 +1,20 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useState, type FormEvent } from "react";
 import { Loader2 } from "lucide-react";
 
 import {
-  ForgotPasswordPanel,
   requestPasswordReset,
   validateAuthEmail,
 } from "@/components/auth/forgot-password-panel";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
 
-type AuthMode = "signin" | "signup";
-type AuthView = AuthMode | "forgot";
+type AuthView = "signin" | "forgot";
+
+const pillInputClassName =
+  "w-full rounded-full border border-white/35 bg-black/20 px-5 py-3 text-sm text-white placeholder:text-white/40 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-sm transition-all focus:border-pink-400/70 focus:outline-none focus:ring-1 focus:ring-pink-400/50 disabled:cursor-not-allowed disabled:opacity-60";
 
 export function LoginForm() {
   const router = useRouter();
@@ -37,7 +28,7 @@ export function LoginForm() {
   const [info, setInfo] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSignIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setInfo(null);
@@ -47,41 +38,17 @@ export function LoginForm() {
     const trimmedEmail = email.trim();
 
     try {
-      if (view === "signin") {
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email: trimmedEmail,
-          password,
-        });
-
-        if (signInError) {
-          throw signInError;
-        }
-
-        router.push(nextPath);
-        router.refresh();
-        return;
-      }
-
-      const { data, error: signUpError } = await supabase.auth.signUp({
+      const { error: signInError } = await supabase.auth.signInWithPassword({
         email: trimmedEmail,
         password,
       });
 
-      if (signUpError) {
-        throw signUpError;
+      if (signInError) {
+        throw signInError;
       }
 
-      if (data.session) {
-        router.push(nextPath);
-        router.refresh();
-        return;
-      }
-
-      setInfo(
-        "Account created. Check your email to confirm your address, then sign in."
-      );
-      setView("signin");
-      setIsSubmitting(false);
+      router.push(nextPath);
+      router.refresh();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Authentication failed.";
@@ -90,7 +57,8 @@ export function LoginForm() {
     }
   }
 
-  async function handleForgotPassword() {
+  async function handleForgotPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setError(null);
     setInfo(null);
 
@@ -114,180 +82,157 @@ export function LoginForm() {
     }
   }
 
-  const mode = view === "forgot" ? "signin" : view;
-
-  return (
-    <Card className="w-full max-w-md">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl">
-          {view === "forgot" ? "Reset your password" : "Welcome to ChatShare"}
-        </CardTitle>
-        <CardDescription>
-          {view === "forgot"
-            ? "Enter your email and we will send you a link to choose a new password."
-            : "Sign in or create an account to publish your AI conversations."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {view === "forgot" ? (
-          <ForgotPasswordPanel
-            email={email}
-            error={error}
-            info={info}
-            isSubmitting={isSubmitting}
-            onEmailChange={setEmail}
-            onSubmit={() => void handleForgotPassword()}
-            onBack={() => {
-              setView("signin");
-              setError(null);
-              setInfo(null);
-            }}
-          />
-        ) : (
-          <Tabs
-            value={mode}
-            onValueChange={(value) => {
-              setView(value as AuthMode);
-              setError(null);
-              setInfo(null);
-            }}
-          >
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="signin">Sign In</TabsTrigger>
-              <TabsTrigger value="signup">Create Account</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="signin" className="mt-6">
-              <AuthFields
-                mode="signin"
-                email={email}
-                password={password}
-                error={error}
-                info={info}
-                isSubmitting={isSubmitting}
-                onEmailChange={setEmail}
-                onPasswordChange={setPassword}
-                onSubmit={handleSubmit}
-                onForgotPassword={() => {
-                  setView("forgot");
-                  setError(null);
-                  setInfo(null);
-                }}
-              />
-            </TabsContent>
-
-            <TabsContent value="signup" className="mt-6">
-              <AuthFields
-                mode="signup"
-                email={email}
-                password={password}
-                error={error}
-                info={info}
-                isSubmitting={isSubmitting}
-                onEmailChange={setEmail}
-                onPasswordChange={setPassword}
-                onSubmit={handleSubmit}
-              />
-            </TabsContent>
-          </Tabs>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-interface AuthFieldsProps {
-  mode: AuthMode;
-  email: string;
-  password: string;
-  error: string | null;
-  info: string | null;
-  isSubmitting: boolean;
-  onEmailChange: (value: string) => void;
-  onPasswordChange: (value: string) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onForgotPassword?: () => void;
-}
-
-function AuthFields({
-  mode,
-  email,
-  password,
-  error,
-  info,
-  isSubmitting,
-  onEmailChange,
-  onPasswordChange,
-  onSubmit,
-  onForgotPassword,
-}: AuthFieldsProps) {
-  return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor={`${mode}-email`}>Email</Label>
-        <Input
-          id={`${mode}-email`}
+  if (view === "forgot") {
+    return (
+      <form
+        onSubmit={(event) => void handleForgotPassword(event)}
+        className="flex w-full max-w-sm flex-col gap-3"
+      >
+        <label htmlFor="login-forgot-email" className="sr-only">
+          Email
+        </label>
+        <input
+          id="login-forgot-email"
           type="email"
           autoComplete="email"
           value={email}
-          onChange={(event) => onEmailChange(event.target.value)}
-          placeholder="you@example.com"
+          onChange={(event) => setEmail(event.target.value)}
+          placeholder="Email"
           disabled={isSubmitting}
           required
+          className={pillInputClassName}
         />
-      </div>
 
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <Label htmlFor={`${mode}-password`}>Password</Label>
-          {mode === "signin" && onForgotPassword ? (
-            <button
-              type="button"
-              className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-              onClick={onForgotPassword}
-              disabled={isSubmitting}
-            >
-              Forgot password?
-            </button>
-          ) : null}
-        </div>
-        <Input
-          id={`${mode}-password`}
+        {error ? (
+          <p role="alert" className="text-center text-sm text-pink-300">
+            {error}
+          </p>
+        ) : null}
+        {info ? (
+          <p role="status" className="text-center text-sm text-cyan-300">
+            {info}
+          </p>
+        ) : null}
+
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="w-full rounded-full border border-white/40 bg-white/10 px-5 py-3 text-sm font-bold tracking-wide text-white backdrop-blur-sm transition-all hover:border-pink-400/60 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isSubmitting ? (
+            <span className="inline-flex items-center justify-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Sending…
+            </span>
+          ) : (
+            "Send reset link"
+          )}
+        </button>
+
+        <button
+          type="button"
+          className="text-center text-sm text-white/55 transition-colors hover:text-white/90"
+          onClick={() => {
+            setView("signin");
+            setError(null);
+            setInfo(null);
+          }}
+          disabled={isSubmitting}
+        >
+          Back to log in
+        </button>
+      </form>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={(event) => void handleSignIn(event)}
+      className="flex w-full max-w-sm flex-col gap-3"
+    >
+      <label htmlFor="login-email" className="sr-only">
+        Email
+      </label>
+      <input
+        id="login-email"
+        type="email"
+        autoComplete="email"
+        value={email}
+        onChange={(event) => setEmail(event.target.value)}
+        placeholder="Email"
+        disabled={isSubmitting}
+        required
+        className={pillInputClassName}
+      />
+
+      <div className="relative">
+        <label htmlFor="login-password" className="sr-only">
+          Password
+        </label>
+        <input
+          id="login-password"
           type="password"
-          autoComplete={mode === "signin" ? "current-password" : "new-password"}
+          autoComplete="current-password"
           value={password}
-          onChange={(event) => onPasswordChange(event.target.value)}
-          placeholder="••••••••"
+          onChange={(event) => setPassword(event.target.value)}
+          placeholder="Password"
           minLength={6}
           disabled={isSubmitting}
           required
+          className={pillInputClassName}
         />
       </div>
 
+      <div className="flex justify-end px-1">
+        <button
+          type="button"
+          className="text-xs text-white/50 underline-offset-4 transition-colors hover:text-cyan-300 hover:underline"
+          onClick={() => {
+            setView("forgot");
+            setError(null);
+            setInfo(null);
+          }}
+          disabled={isSubmitting}
+        >
+          Forgot password?
+        </button>
+      </div>
+
       {error ? (
-        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p role="alert" className="text-center text-sm text-pink-300">
           {error}
         </p>
       ) : null}
-
       {info ? (
-        <p className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
+        <p role="status" className="text-center text-sm text-cyan-300">
           {info}
         </p>
       ) : null}
 
-      <Button type="submit" className="w-full" disabled={isSubmitting}>
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="w-full rounded-full border border-pink-400/50 bg-gradient-to-r from-pink-500/80 via-purple-500/80 to-cyan-400/80 px-5 py-3 text-sm font-bold tracking-wide text-white shadow-[0_0_20px_rgba(139,92,246,0.35)] transition-all hover:scale-[1.02] hover:shadow-[0_0_28px_rgba(236,72,153,0.45)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
+      >
         {isSubmitting ? (
-          <>
+          <span className="inline-flex items-center justify-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin" />
-            {mode === "signin" ? "Signing in…" : "Creating account…"}
-          </>
-        ) : mode === "signin" ? (
-          "Sign In"
+            Logging in…
+          </span>
         ) : (
-          "Create Account"
+          "Log In"
         )}
-      </Button>
+      </button>
+
+      <p className="pt-1 text-center text-sm text-white/55">
+        No ticket?{" "}
+        <Link
+          href="/sign-up"
+          className="text-cyan-400 hover:text-cyan-300 hover:underline"
+        >
+          Step right up.
+        </Link>
+      </p>
     </form>
   );
 }

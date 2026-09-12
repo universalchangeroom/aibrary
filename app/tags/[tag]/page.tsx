@@ -18,6 +18,8 @@ type PublicThreadRow = {
   source_model: string | null;
   tags: unknown;
   total_tokens: number | null;
+  props_count: number | null;
+  slop_count: number | null;
   created_at: string;
 };
 
@@ -77,7 +79,12 @@ function toThreadCards(
         usernamesByAuthorId.get(row.author_id)?.replace(/^@+/, "") ||
         "anonymous",
       propsCount:
-        typeof row.total_tokens === "number" ? row.total_tokens : 0,
+        typeof row.props_count === "number"
+          ? row.props_count
+          : typeof row.total_tokens === "number"
+            ? row.total_tokens
+            : 0,
+      slopCount: typeof row.slop_count === "number" ? row.slop_count : 0,
       primaryTag: matchingTag || preferredTag || "Uncategorized",
     };
   });
@@ -97,7 +104,7 @@ export default async function TagResultsPage({
   const { data, error } = await supabase
     .from("threads")
     .select(
-      "id, author_id, title, content, summary, source_model, tags, total_tokens, created_at"
+      "id, author_id, title, content, summary, source_model, tags, total_tokens, props_count, slop_count, created_at"
     )
     .eq("is_public", true)
     .eq("status", "published")
@@ -132,29 +139,48 @@ export default async function TagResultsPage({
   }
 
   const threads = toThreadCards(rows, usernamesByAuthorId, decodedTag);
+  const displayTag = decodedTag || "untagged";
+  const transcriptLabel =
+    threads.length === 1 ? "transcript" : "transcripts";
 
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] bg-gradient-to-br from-orange-50 via-amber-50 to-rose-50 text-stone-800">
-      <main className="mx-auto w-full max-w-7xl px-6 py-16">
-        <header className="space-y-2 rounded-xl bg-gradient-to-r from-amber-500/10 via-orange-400/10 to-transparent px-4 py-6">
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-            # {decodedTag || "untagged"}
+    <div className="relative min-h-[calc(100vh-3.5rem)] overflow-hidden bg-slate-950 text-white">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-950 via-violet-950 to-slate-950"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -left-20 top-16 h-64 w-64 rounded-full bg-blue-500/20 blur-3xl"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute right-0 top-24 h-72 w-72 rounded-full bg-fuchsia-500/15 blur-3xl"
+      />
+
+      <main className="relative z-10 mx-auto w-full max-w-7xl px-6 py-16">
+        <header className="space-y-3 border-b border-white/15 pb-6">
+          <h1 className="text-3xl font-bold tracking-tight">
+            <span className="font-medium text-slate-400">Context:</span>{" "}
+            <span className="text-white">{displayTag}</span>
           </h1>
-          <p className="text-stone-600">Showing published chats</p>
+          <p className="inline-flex rounded-full border border-cyan-300/30 bg-cyan-400/10 px-3 py-1 text-xs font-medium tracking-wide text-cyan-200">
+            {threads.length} {transcriptLabel}
+          </p>
         </header>
 
         {error ? (
-          <div className="mt-12 rounded-xl border border-dashed border-orange-200 bg-white/60 px-6 py-12 text-center text-stone-600">
+          <div className="mt-10 rounded-xl border border-dashed border-white/20 bg-white/5 px-6 py-12 text-center text-slate-300">
             Tag results are temporarily unavailable.
           </div>
         ) : threads.length > 0 ? (
-          <div className="mt-12 flex flex-wrap gap-6">
+          <div className="mt-10 flex flex-wrap gap-6">
             {threads.map((thread) => (
               <ThreadCard key={thread.id} {...thread} />
             ))}
           </div>
         ) : (
-          <div className="mt-12 rounded-xl border border-dashed border-orange-200 bg-white/60 px-6 py-12 text-center text-stone-600">
+          <div className="mt-10 rounded-xl border border-dashed border-white/20 bg-white/5 px-6 py-12 text-center text-slate-300">
             No chats found bearing this tag.
           </div>
         )}

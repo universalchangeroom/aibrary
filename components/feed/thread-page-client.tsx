@@ -28,13 +28,23 @@ export function ThreadPageClient({
   viewerHasStarred,
   viewerGivenProps = 0,
 }: ThreadPageClientProps) {
-  const serverPropsTotal = normalizePropsTotal(thread.total_tokens);
+  const serverPropsTotal = normalizePropsTotal(
+    thread.props_count ?? thread.total_tokens
+  );
+  const serverSlopTotal =
+    typeof thread.slop_count === "number" ? Math.max(0, thread.slop_count) : 0;
   const [displayedPropsTotal, setDisplayedPropsTotal] =
     useState(serverPropsTotal);
+  const [displayedSlopTotal, setDisplayedSlopTotal] = useState(serverSlopTotal);
 
   useEffect(() => {
-    setDisplayedPropsTotal(normalizePropsTotal(thread.total_tokens));
-  }, [thread.id, thread.total_tokens]);
+    setDisplayedPropsTotal(
+      normalizePropsTotal(thread.props_count ?? thread.total_tokens)
+    );
+    setDisplayedSlopTotal(
+      typeof thread.slop_count === "number" ? Math.max(0, thread.slop_count) : 0
+    );
+  }, [thread.id, thread.total_tokens, thread.props_count, thread.slop_count]);
 
   return (
     <>
@@ -54,6 +64,8 @@ export function ThreadPageClient({
           tokenBalance={viewerTokenBalance}
           starred={viewerHasStarred}
           previouslyGivenProps={viewerGivenProps}
+          propsCount={displayedPropsTotal}
+          slopCount={displayedSlopTotal}
           onOptimisticPropsGive={(amount) => {
             setDisplayedPropsTotal((prev) => prev + amount);
           }}
@@ -62,6 +74,9 @@ export function ThreadPageClient({
           }}
           onPropsTotalSync={(total) => {
             setDisplayedPropsTotal(normalizePropsTotal(total));
+          }}
+          onSlopCountSync={(total) => {
+            setDisplayedSlopTotal(Math.max(0, total));
           }}
         />
       </div>

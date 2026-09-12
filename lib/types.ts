@@ -12,6 +12,40 @@ export type VoteValue = 1 | -1;
 /** Moderation status for public feed visibility. */
 export type ThreadStatus = "published" | "pending_review";
 
+/** User report category for `public.reports.reason`. */
+export type ReportReason = "SPAM" | "PII" | "DANGER" | "OTHER";
+
+/** Moderation workflow status for `public.reports.status`. */
+export type ReportStatus = "PENDING" | "RESOLVED" | "DISMISSED";
+
+/** Row shape for `public.reports`. */
+export interface Report {
+  id: string;
+  thread_id: string | null;
+  reporter_id: string;
+  reason: ReportReason;
+  status: ReportStatus;
+  created_at: string;
+}
+
+export type ReportInsert = {
+  id?: string;
+  thread_id: string;
+  reporter_id: string;
+  reason: ReportReason;
+  status?: ReportStatus;
+  created_at?: string;
+};
+
+export type ReportUpdate = {
+  id?: string;
+  thread_id?: string | null;
+  reporter_id?: string;
+  reason?: ReportReason;
+  status?: ReportStatus;
+  created_at?: string;
+};
+
 /** Row shape for `public.threads`. */
 export interface Thread {
   id: string;
@@ -23,6 +57,10 @@ export interface Thread {
   tags: string[];
   is_public: boolean;
   total_tokens?: number;
+  /** Public Props tally (synced with gifts / total_tokens). */
+  props_count?: number;
+  /** Public Mr. Slop tally. */
+  slop_count?: number;
   /** published = public feed; pending_review = image/video content awaiting admin */
   status?: ThreadStatus | string;
   created_at: string;

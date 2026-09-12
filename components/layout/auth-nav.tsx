@@ -12,20 +12,40 @@ import {
   Shield,
   Star,
   Settings,
-  UserRound,
 } from "lucide-react";
 
-import { AuthModal } from "@/components/auth/auth-modal";
 import { PropsExplainerModal } from "@/components/props-explainer-modal";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { isAdminEmail } from "@/lib/admin";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
-function userInitials(email: string | undefined): string {
-  if (!email) return "?";
-  const local = email.split("@")[0] ?? email;
-  return local.slice(0, 2).toUpperCase();
+/** Text-only monogram from permanent username — never an image. */
+function usernameMonogram(username: string | null | undefined): string {
+  const cleaned = username?.trim().replace(/^@+/, "") ?? "";
+  if (!cleaned) return "?";
+  return cleaned.slice(0, Math.min(2, cleaned.length)).toUpperCase();
+}
+
+function MonogramBadge({
+  label,
+  className,
+}: {
+  label: string;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "flex shrink-0 items-center justify-center rounded-full bg-muted font-bold tabular-nums text-foreground",
+        className
+      )}
+      aria-hidden
+    >
+      {label}
+    </span>
+  );
 }
 
 export function AuthNav({
@@ -37,10 +57,10 @@ export function AuthNav({
 }) {
   const router = useRouter();
   const { user, isLoading } = useAuth();
-  const [authOpen, setAuthOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [propsExplainerOpen, setPropsExplainerOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [username, setUsername] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -64,11 +84,38 @@ export function AuthNav({
     };
   }, []);
 
+  useEffect(() => {
+    if (!user) {
+      setUsername(null);
+      return;
+    }
+
+    let cancelled = false;
+    const supabase = createClient();
+
+    void (async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("username")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      const next =
+        typeof data?.username === "string" ? data.username.trim() : "";
+      setUsername(next || null);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   async function handleSignOut() {
     setIsSigningOut(true);
     setMenuOpen(false);
     try {
-      const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
       await supabase.auth.signOut();
       router.push("/");
@@ -92,20 +139,15 @@ export function AuthNav({
   if (!user) {
     return (
       <div className={cn("flex items-center gap-4", className)}>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => setAuthOpen(true)}
-        >
-          Sign In
+        <Button asChild size="sm" variant="outline">
+          <Link href="/login">Sign In</Link>
         </Button>
-        <AuthModal open={authOpen} onOpenChange={setAuthOpen} />
       </div>
     );
   }
 
-  const email = user.email ?? "Account";
+  const handle = username?.replace(/^@+/, "") ?? null;
+  const monogram = usernameMonogram(handle);
   const showPropsBalance = typeof tokenBalance === "number";
 
   return (
@@ -141,16 +183,14 @@ export function AuthNav({
           className="gap-2 pl-1.5"
           aria-expanded={menuOpen}
           aria-haspopup="menu"
+          aria-label={
+            handle ? `Account menu for @${handle}` : "Account menu"
+          }
           onClick={() => setMenuOpen((open) => !open)}
         >
-          <span
-            className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground"
-            aria-hidden
-          >
-            {userInitials(user.email)}
-          </span>
+          <MonogramBadge label={monogram} className="h-6 w-6 text-[10px]" />
           <span className="hidden max-w-[10rem] truncate sm:inline">
-            {email}
+            {handle ? `@${handle}` : "Set username"}
           </span>
           <ChevronDown
             className={cn(
@@ -166,24 +206,38 @@ export function AuthNav({
             className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
           >
             <div className="flex items-center gap-2 border-b px-2 py-2">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                <UserRound className="h-4 w-4 text-muted-foreground" />
-              </span>
+              <MonogramBadge
+                label={monogram}
+                className="h-8 w-8 text-xs"
+              />
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{email}</p>
+                <p className="truncate text-sm font-medium">
+                  {handle ? `@${handle}` : "Set username"}
+                </p>
                 <p className="text-xs text-muted-foreground">Signed in</p>
               </div>
             </div>
             {isAdminEmail(user.email) ? (
-              <Link
-                href="/admin/moderation"
-                role="menuitem"
-                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
-                onClick={() => setMenuOpen(false)}
-              >
-                <Shield className="h-4 w-4" />
-                Moderation
-              </Link>
+              <>
+                <Link
+                  href="/admin/reports"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <Shield className="h-4 w-4" />
+                  Reports
+                </Link>
+                <Link
+                  href="/admin/moderation"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <Shield className="h-4 w-4" />
+                  Moderation
+                </Link>
+              </>
             ) : null}
             <Link
               href={`/user/${encodeURIComponent(user.id)}`}

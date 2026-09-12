@@ -5,6 +5,8 @@ import { Loader2, Star } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { PropsEmojiGrid } from "@/components/feed/props-emoji-grid";
+import { HandMeter } from "@/components/HandMeter";
+import { MrSlopTrigger } from "@/components/MrSlopTrigger";
 import { giveProps, retractProps, toggleStar } from "@/lib/actions/props";
 import { PROPS_INFLUENCE_CAP } from "@/lib/props-cap";
 import { Button } from "@/components/ui/button";
@@ -13,6 +15,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 interface ThreadActionsProps {
   threadId: string;
@@ -32,6 +35,12 @@ interface ThreadActionsProps {
   onOptimisticPropsRevert?: (amount: number) => void;
   /** Replace the displayed total with the authoritative server value. */
   onPropsTotalSync?: (total: number) => void;
+  /** Optional: sync displayed slop count after marking. */
+  onSlopCountSync?: (slopCount: number) => void;
+  /** Live public Props tally for the hand meter inside the pane. */
+  propsCount?: number;
+  /** Live public Slop tally for the hand meter inside the pane. */
+  slopCount?: number;
 }
 
 const propsButtonClassName =
@@ -54,6 +63,9 @@ export function ThreadActions({
   onOptimisticPropsGive,
   onOptimisticPropsRevert,
   onPropsTotalSync,
+  onSlopCountSync,
+  propsCount = 0,
+  slopCount = 0,
 }: ThreadActionsProps) {
   const router = useRouter();
   const [isStarPending, startStarTransition] = useTransition();
@@ -65,6 +77,12 @@ export function ThreadActions({
   const [tokenBalance, setTokenBalance] = useState(initialTokenBalance);
   const [previouslyGiven, setPreviouslyGiven] = useState(
     Math.max(0, Math.floor(initialPreviouslyGiven))
+  );
+  const [localPropsCount, setLocalPropsCount] = useState(
+    Math.max(0, Math.floor(propsCount))
+  );
+  const [localSlopCount, setLocalSlopCount] = useState(
+    Math.max(0, Math.floor(slopCount))
   );
   const [error, setError] = useState<string | null>(null);
 
@@ -79,6 +97,14 @@ export function ThreadActions({
   useEffect(() => {
     setPreviouslyGiven(Math.max(0, Math.floor(initialPreviouslyGiven)));
   }, [initialPreviouslyGiven]);
+
+  useEffect(() => {
+    setLocalPropsCount(Math.max(0, Math.floor(propsCount)));
+  }, [propsCount]);
+
+  useEffect(() => {
+    setLocalSlopCount(Math.max(0, Math.floor(slopCount)));
+  }, [slopCount]);
 
   const isAuthenticated = Boolean(currentUserId);
   const isAuthor = Boolean(currentUserId && currentUserId === authorId);
@@ -144,6 +170,44 @@ export function ThreadActions({
     });
   }
 
+  function handleQuickProp() {
+    if (
+      !canGiveProps ||
+      isPropsPending ||
+      tokenBalance == null ||
+      selectableProps < 1
+    ) {
+      return;
+    }
+
+    setError(null);
+    const amount = 1;
+    const prevBalance = tokenBalance;
+    const prevGiven = previouslyGiven;
+
+    onOptimisticPropsGive?.(amount);
+    setTokenBalance(Math.max(0, prevBalance - amount));
+    setPreviouslyGiven(prevGiven + amount);
+    setLocalPropsCount((prev) => prev + amount);
+
+    startPropsTransition(async () => {
+      const result = await giveProps(threadId, amount);
+      if (!result.success) {
+        onOptimisticPropsRevert?.(amount);
+        setTokenBalance(prevBalance);
+        setPreviouslyGiven(prevGiven);
+        setLocalPropsCount((prev) => Math.max(0, prev - amount));
+        setError(result.error);
+        return;
+      }
+
+      onPropsTotalSync?.(result.totalTokens);
+      setLocalPropsCount(result.totalTokens);
+      setTokenBalance(result.remainingBalance);
+      router.refresh();
+    });
+  }
+
   function handleGiveProps() {
     if (
       !canGiveProps ||
@@ -162,6 +226,7 @@ export function ThreadActions({
     onOptimisticPropsGive?.(amount);
     setTokenBalance(Math.max(0, prevBalance - amount));
     setPreviouslyGiven(prevGiven + amount);
+    setLocalPropsCount((prev) => prev + amount);
 
     startPropsTransition(async () => {
       const result = await giveProps(threadId, amount);
@@ -169,11 +234,13 @@ export function ThreadActions({
         onOptimisticPropsRevert?.(amount);
         setTokenBalance(prevBalance);
         setPreviouslyGiven(prevGiven);
+        setLocalPropsCount((prev) => Math.max(0, prev - amount));
         setError(result.error);
         return;
       }
 
       onPropsTotalSync?.(result.totalTokens);
+      setLocalPropsCount(result.totalTokens);
       setTokenBalance(result.remainingBalance);
       setSelectedAmount(0);
       setPropsOpen(false);
@@ -196,17 +263,20 @@ export function ThreadActions({
     onOptimisticPropsRevert?.(burnedAmount);
     setPreviouslyGiven(0);
     setSelectedAmount(0);
+    setLocalPropsCount((prev) => Math.max(0, prev - burnedAmount));
 
     startPropsTransition(async () => {
       const result = await retractProps(threadId);
       if (!result.success) {
         onOptimisticPropsGive?.(burnedAmount);
         setPreviouslyGiven(burnedAmount);
+        setLocalPropsCount((prev) => prev + burnedAmount);
         setError(result.error);
         return;
       }
 
       onPropsTotalSync?.(result.totalTokens);
+      setLocalPropsCount(result.totalTokens);
       setPreviouslyGiven(0);
       setPropsOpen(false);
     });
@@ -275,6 +345,44 @@ export function ThreadActions({
                 </>
               ) : (
                 <>
+                  <div className="flex items-center justify-center rounded-xl border border-stone-200/80 bg-white/70 px-3 py-2 dark:border-white/10 dark:bg-black/20">
+                    <HandMeter
+                      propsCount={localPropsCount}
+                      slopCount={localSlopCount}
+                      size="md"
+                    />
+                  </div>
+
+                  <div className="flex items-stretch gap-2">
+                    <button
+                      type="button"
+                      onClick={handleQuickProp}
+                      disabled={
+                        !canGiveProps ||
+                        selectableProps < 1 ||
+                        isPropsPending ||
+                        isStarPending
+                      }
+                      className={cn(
+                        "flex flex-1 items-center justify-center gap-2 rounded-xl border border-amber-400/50 bg-amber-400/10 px-3 py-2.5 text-sm font-semibold text-amber-950 transition",
+                        "hover:border-amber-300 hover:bg-amber-400/20 hover:shadow-[0_0_16px_rgba(251,191,36,0.35)]",
+                        "disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-100"
+                      )}
+                    >
+                      <Star className="h-4 w-4 fill-amber-400 text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.8)]" />
+                      +1 Prop
+                    </button>
+                    <MrSlopTrigger
+                      threadId={threadId}
+                      size="sm"
+                      className="shrink-0"
+                      onSlopped={(nextSlop) => {
+                        setLocalSlopCount(nextSlop);
+                        onSlopCountSync?.(nextSlop);
+                      }}
+                    />
+                  </div>
+
                   <div className="mb-4 flex w-full flex-wrap items-center justify-between gap-2 text-xs">
                     <span className="text-stone-600 dark:text-red-200/80">
                       Available Props: {availableProps}

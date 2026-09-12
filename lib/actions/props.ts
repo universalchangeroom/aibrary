@@ -354,9 +354,9 @@ export async function giveProps(
     }
     const { data: updatedThread, error } = await admin
       .from("threads")
-      .update({ total_tokens: nextTotal })
+      .update({ total_tokens: nextTotal, props_count: nextTotal })
       .eq("id", threadId)
-      .select("id, total_tokens")
+      .select("id, total_tokens, props_count")
       .maybeSingle();
 
     if (error) {
@@ -515,9 +515,9 @@ export async function retractProps(
 
   const { data: updatedThread, error: totalError } = await admin
     .from("threads")
-    .update({ total_tokens: nextTotal })
+    .update({ total_tokens: nextTotal, props_count: nextTotal })
     .eq("id", threadId)
-    .select("id, total_tokens")
+    .select("id, total_tokens, props_count")
     .maybeSingle();
 
   if (totalError) {
