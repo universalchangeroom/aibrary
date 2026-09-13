@@ -28,11 +28,11 @@ export function ConceptSwimlane({
         {categoryName}
       </h2>
 
-      <div className="flex flex-row items-stretch gap-6 overflow-x-auto overflow-y-hidden pb-6 snap-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex flex-row items-stretch gap-3 overflow-x-auto overflow-y-hidden pb-3 snap-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {threads.map((thread) => (
           <div
             key={thread.id}
-            className="flex h-auto w-[350px] min-w-[320px] shrink-0 snap-start"
+            className="flex h-auto w-[224px] min-w-[205px] shrink-0 snap-start"
           >
             <ThreadCard {...thread} />
           </div>

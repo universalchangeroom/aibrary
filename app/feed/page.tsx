@@ -347,7 +347,7 @@ export default async function FeedPage() {
         className="pointer-events-none absolute bottom-0 left-1/3 h-64 w-64 rounded-full bg-yellow-400/10 blur-3xl"
       />
 
-      <main className="relative z-10 space-y-10 py-10 pb-20">
+      <main className="relative z-10 space-y-5 py-6 pb-12">
         {error ? (
           <div className="mx-auto max-w-7xl px-6">
             <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 px-6 py-12 text-center text-slate-300 backdrop-blur-md">
