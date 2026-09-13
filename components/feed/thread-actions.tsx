@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { Loader2, Star } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { CuratorNoteModal } from "@/components/feed/curator-note-modal";
 import { PropsEmojiGrid } from "@/components/feed/props-emoji-grid";
 import { HandMeter } from "@/components/HandMeter";
 import { MrSlopTrigger } from "@/components/MrSlopTrigger";
@@ -73,6 +74,7 @@ export function ThreadActions({
 
   const [starred, setStarred] = useState(initialStarred);
   const [propsOpen, setPropsOpen] = useState(false);
+  const [curatorNoteOpen, setCuratorNoteOpen] = useState(false);
   const [selectedAmount, setSelectedAmount] = useState(0);
   const [tokenBalance, setTokenBalance] = useState(initialTokenBalance);
   const [previouslyGiven, setPreviouslyGiven] = useState(
@@ -150,6 +152,11 @@ export function ThreadActions({
     }
   }, [selectableProps, selectedAmount]);
 
+  function openCuratorNoteModal() {
+    setPropsOpen(false);
+    setCuratorNoteOpen(true);
+  }
+
   function handleToggleStar() {
     if (!isAuthenticated || isStarPending) return;
 
@@ -204,6 +211,10 @@ export function ThreadActions({
       onPropsTotalSync?.(result.totalTokens);
       setLocalPropsCount(result.totalTokens);
       setTokenBalance(result.remainingBalance);
+      setPreviouslyGiven(result.viewerGivenTotal);
+      if (result.reachedMaxProps) {
+        openCuratorNoteModal();
+      }
       router.refresh();
     });
   }
@@ -242,8 +253,12 @@ export function ThreadActions({
       onPropsTotalSync?.(result.totalTokens);
       setLocalPropsCount(result.totalTokens);
       setTokenBalance(result.remainingBalance);
+      setPreviouslyGiven(result.viewerGivenTotal);
       setSelectedAmount(0);
       setPropsOpen(false);
+      if (result.reachedMaxProps) {
+        setCuratorNoteOpen(true);
+      }
       router.refresh();
     });
   }
@@ -264,6 +279,7 @@ export function ThreadActions({
     setPreviouslyGiven(0);
     setSelectedAmount(0);
     setLocalPropsCount((prev) => Math.max(0, prev - burnedAmount));
+    setCuratorNoteOpen(false);
 
     startPropsTransition(async () => {
       const result = await retractProps(threadId);
@@ -341,6 +357,16 @@ export function ThreadActions({
                   >
                     You&apos;ve given the maximum {PROPS_INFLUENCE_CAP} Props! 🎉
                   </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full border-amber-300/80 bg-amber-50/80 text-amber-950 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-50 dark:hover:bg-amber-950/50"
+                    onClick={openCuratorNoteModal}
+                    disabled={isPropsPending}
+                  >
+                    Write or edit curator note
+                  </Button>
                   {retractButton}
                 </>
               ) : (
@@ -443,6 +469,12 @@ export function ThreadActions({
           {error}
         </p>
       ) : null}
+
+      <CuratorNoteModal
+        open={curatorNoteOpen}
+        onOpenChange={setCuratorNoteOpen}
+        threadId={threadId}
+      />
     </div>
   );
 }

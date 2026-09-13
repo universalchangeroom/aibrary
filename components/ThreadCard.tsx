@@ -7,39 +7,73 @@ import { Flag, MoreHorizontal } from "lucide-react";
 
 import { MrSlopFace } from "@/components/MrSlopFace";
 import { HandMeter } from "@/components/HandMeter";
+import { CuratorNotesDrawer } from "@/components/feed/curator-notes-drawer";
+import { SourceModelIcon } from "@/components/feed/source-model-icon";
 import { ReportThreadModal } from "@/components/ReportThreadModal";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
+import type { MaxPropsEndorsementWithCurator } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export interface ThreadCardProps {
   id: string;
   title: string;
-  summary: string;
+  /** Curator's personal note (stored in DB `summary`). */
+  personalNote?: string | null;
+  /** First user prompt for the card body + reading tooltip. */
+  prompt: string;
+  /** Display label for the model pill. */
   modelName: string;
+  /** Raw stored source_model (used for logo mapping). */
+  sourceModel?: string | null;
   authorUsername: string;
   propsCount: number;
   slopCount: number;
-  primaryTag: string;
+  /** Max Props curator endorsements, oldest first. */
+  maxPropsEndorsements?: MaxPropsEndorsementWithCurator[];
+}
+
+function usernameMonogram(username: string): string {
+  const cleaned = username.trim().replace(/^@+/, "");
+  if (!cleaned) return "?";
+  return cleaned.slice(0, Math.min(2, cleaned.length)).toUpperCase();
 }
 
 export function ThreadCard({
   id,
   title,
-  summary,
+  personalNote,
+  prompt,
   modelName,
+  sourceModel,
   authorUsername,
   propsCount,
   slopCount,
-  primaryTag,
+  maxPropsEndorsements: initialEndorsements = [],
 }: ThreadCardProps) {
   const router = useRouter();
   const { user } = useAuth();
-  const username = authorUsername.replace(/^@+/, "");
-  const tag = primaryTag.replace(/^#+/, "");
+  const username = authorUsername.replace(/^@+/, "") || "anonymous";
+  const note = personalNote?.trim() || "";
+  const hasPersonalNote = note.length > 0;
+  const modelIconKey = (sourceModel?.trim() || modelName).trim();
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [curatorDrawerOpen, setCuratorDrawerOpen] = useState(false);
+  const [maxPropsEndorsements, setMaxPropsEndorsements] = useState(
+    initialEndorsements
+  );
   const menuRef = useRef<HTMLDivElement>(null);
+  const hasMaxProps = maxPropsEndorsements.length > 0;
+
+  useEffect(() => {
+    setMaxPropsEndorsements(initialEndorsements);
+  }, [initialEndorsements]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -62,13 +96,6 @@ export function ThreadCard({
     };
   }, [menuOpen]);
 
-  function handleTagClick(event: MouseEvent<HTMLButtonElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    if (!tag) return;
-    router.push(`/tags/${encodeURIComponent(tag)}`);
-  }
-
   function handleMenuToggle(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
@@ -88,11 +115,21 @@ export function ThreadCard({
     setReportOpen(true);
   }
 
+  function handleMaxPropsBadgeClick(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    setCuratorDrawerOpen(true);
+  }
+
+  function handleUsernameClick(event: MouseEvent<HTMLAnchorElement>) {
+    event.stopPropagation();
+  }
+
   return (
     <>
       <article
         className={cn(
-          "relative flex h-full w-full flex-col rounded-3xl border border-white/20 bg-white/10 p-6 shadow-[0_8px_32px_rgba(0,0,0,0.37)] backdrop-blur-md transition-all",
+          "relative flex h-full min-h-[22rem] w-full flex-col rounded-3xl border border-white/20 bg-white/10 px-5 pb-5 pt-3 shadow-[0_8px_32px_rgba(0,0,0,0.37)] backdrop-blur-md transition-all",
           "hover:border-blue-400/50 hover:shadow-[0_0_20px_rgba(59,130,246,0.5)]"
         )}
       >
@@ -104,9 +141,44 @@ export function ThreadCard({
 
         <div className="relative z-10 flex h-full flex-1 flex-col pointer-events-none">
           <div className="flex items-start justify-between gap-3">
-            <span className="inline-flex rounded-full border border-cyan-300/40 bg-cyan-400/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.25)]">
-              {modelName}
-            </span>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-300/40 bg-cyan-400/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.25)]">
+                <SourceModelIcon sourceModel={modelIconKey} />
+                <span>{modelName}</span>
+              </span>
+
+              {hasMaxProps ? (
+                <button
+                  type="button"
+                  onClick={handleMaxPropsBadgeClick}
+                  aria-label={`View ${maxPropsEndorsements.length} Max Props ${
+                    maxPropsEndorsements.length === 1
+                      ? "endorsement"
+                      : "endorsements"
+                  }`}
+                  className={cn(
+                    "pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-amber-400/55",
+                    "bg-gradient-to-r from-amber-500/25 via-orange-500/20 to-rose-600/25",
+                    "px-2.5 py-1 font-serif text-[0.7rem] font-semibold tracking-[0.08em] text-amber-100",
+                    "shadow-[0_0_14px_rgba(245,158,11,0.45),inset_0_0_0_1px_rgba(251,191,36,0.15)]",
+                    "transition hover:border-amber-300/80 hover:from-amber-400/35 hover:via-orange-400/30 hover:to-rose-500/35",
+                    "hover:shadow-[0_0_20px_rgba(244,63,94,0.4),0_0_12px_rgba(245,158,11,0.55)]",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className="h-1.5 w-1.5 rounded-full bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.95)]"
+                  />
+                  Max Props
+                  {maxPropsEndorsements.length > 1 ? (
+                    <span className="font-sans text-[0.65rem] font-medium tracking-normal text-amber-200/80">
+                      ×{maxPropsEndorsements.length}
+                    </span>
+                  ) : null}
+                </button>
+              ) : null}
+            </div>
 
             <div className="relative shrink-0 pointer-events-auto" ref={menuRef}>
               <button
@@ -139,26 +211,74 @@ export function ThreadCard({
             </div>
           </div>
 
-          <h3 className="mt-4 line-clamp-2 font-serif text-xl font-bold leading-snug text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.25)] sm:text-2xl">
+          <h3 className="mt-2 line-clamp-4 font-serif text-2xl font-bold leading-tight tracking-tight text-amber-100 drop-shadow-[0_0_12px_rgba(251,191,36,0.35)] sm:text-[1.65rem]">
             {title}
           </h3>
 
-          <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-slate-200/85">
-            {summary}
-          </p>
-
-          <footer className="mt-auto flex items-end justify-between gap-4 pt-6">
-            <button
-              type="button"
-              onClick={handleTagClick}
-              className="pointer-events-auto min-w-0 truncate rounded-md px-1.5 py-0.5 text-left text-sm font-semibold text-yellow-300 transition-colors hover:cursor-pointer hover:bg-yellow-400/20 hover:text-yellow-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-300"
-              aria-label={`View chats tagged ${tag}`}
+          {hasPersonalNote ? (
+            <p
+              className={cn(
+                "mt-2 line-clamp-2 font-serif text-sm italic leading-snug",
+                "text-rose-300/90 drop-shadow-[0_0_8px_rgba(190,18,60,0.25)]"
+              )}
             >
-              #{tag}
-            </button>
+              {note}
+            </p>
+          ) : null}
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <p
+                className={cn(
+                  "pointer-events-auto mt-2 line-clamp-3 cursor-help text-sm leading-relaxed text-stone-200/90",
+                  "outline-none focus-visible:rounded-md focus-visible:ring-2 focus-visible:ring-amber-400/60"
+                )}
+                tabIndex={0}
+              >
+                {prompt}
+              </p>
+            </TooltipTrigger>
+            <TooltipContent
+              side="bottom"
+              align="start"
+              className={cn(
+                "max-h-[min(60vh,24rem)] max-w-md overflow-y-auto border-amber-500/40",
+                "bg-gradient-to-br from-stone-950 via-stone-900 to-amber-950/90 p-4",
+                "font-serif text-sm leading-relaxed text-amber-50/95",
+                "shadow-[0_0_24px_rgba(245,158,11,0.28),0_12px_32px_rgba(0,0,0,0.45)]",
+                "break-words whitespace-pre-wrap"
+              )}
+            >
+              {prompt}
+            </TooltipContent>
+          </Tooltip>
+
+          <footer className="mt-auto flex items-end justify-between gap-4 pt-4">
+            <Link
+              href={`/user/${encodeURIComponent(username)}`}
+              onClick={handleUsernameClick}
+              className={cn(
+                "pointer-events-auto inline-flex min-w-0 max-w-[50%] items-center gap-2 rounded-md px-1 py-0.5",
+                "text-sm font-medium text-white/85 transition-colors",
+                "hover:bg-white/10 hover:text-white",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+              )}
+              aria-label={`View @${username}'s profile`}
+            >
+              <span
+                className={cn(
+                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full",
+                  "border border-rose-400/35 bg-rose-500/20",
+                  "font-serif text-[0.65rem] font-bold tracking-wide text-rose-100"
+                )}
+                aria-hidden
+              >
+                {usernameMonogram(username)}
+              </span>
+              <span className="truncate">@{username}</span>
+            </Link>
 
             <div className="flex shrink-0 items-center gap-2 text-sm font-medium text-white/90">
-              <span>@{username}</span>
               <HandMeter
                 propsCount={propsCount}
                 slopCount={slopCount}
@@ -189,6 +309,15 @@ export function ThreadCard({
         threadId={id}
         open={reportOpen}
         onOpenChange={setReportOpen}
+      />
+
+      <CuratorNotesDrawer
+        open={curatorDrawerOpen}
+        onOpenChange={setCuratorDrawerOpen}
+        threadId={id}
+        threadTitle={title}
+        endorsements={maxPropsEndorsements}
+        onEndorsementsChange={setMaxPropsEndorsements}
       />
     </>
   );

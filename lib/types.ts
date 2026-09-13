@@ -78,6 +78,42 @@ export interface Footnote {
   created_at: string;
 }
 
+/**
+ * Optional curator note unlocked at the 100-Prop Influence Cap.
+ * Row shape for `public.max_props_endorsements`.
+ */
+export interface MaxPropsEndorsement {
+  id: string;
+  thread_id: string;
+  user_id: string;
+  comment: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MaxPropsEndorsementInsert = {
+  id?: string;
+  thread_id: string;
+  user_id: string;
+  comment?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type MaxPropsEndorsementUpdate = {
+  id?: string;
+  thread_id?: string;
+  user_id?: string;
+  comment?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+/** Endorsement row with curator display identity for feed/drawer UI. */
+export type MaxPropsEndorsementWithCurator = MaxPropsEndorsement & {
+  curatorUsername: string | null;
+};
+
 export type FootnoteWithVotes = Footnote & {
   score: number;
   userVote: VoteValue | null;

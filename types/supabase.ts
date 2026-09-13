@@ -165,6 +165,48 @@ export type Database = {
           },
         ];
       };
+      max_props_endorsements: {
+        Row: {
+          id: string;
+          thread_id: string;
+          user_id: string;
+          comment: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          thread_id: string;
+          user_id: string;
+          comment?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          thread_id?: string;
+          user_id?: string;
+          comment?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "max_props_endorsements_thread_id_fkey";
+            columns: ["thread_id"];
+            isOneToOne: false;
+            referencedRelation: "threads";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "max_props_endorsements_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -196,3 +238,7 @@ export type TablesUpdate<T extends keyof Database["public"]["Tables"]> =
 export type Report = Tables<"reports">;
 export type ReportInsert = TablesInsert<"reports">;
 export type ReportUpdate = TablesUpdate<"reports">;
+
+export type MaxPropsEndorsement = Tables<"max_props_endorsements">;
+export type MaxPropsEndorsementInsert = TablesInsert<"max_props_endorsements">;
+export type MaxPropsEndorsementUpdate = TablesUpdate<"max_props_endorsements">;

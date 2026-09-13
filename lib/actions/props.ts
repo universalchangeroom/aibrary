@@ -10,7 +10,10 @@ import {
   normalizeTimezone,
   type EnsuredProfile,
 } from "@/lib/props-balance";
-import { PROPS_INFLUENCE_CAP } from "@/lib/props-cap";
+import {
+  MAX_PROPS_ENDORSEMENT_COMMENT_LENGTH,
+  PROPS_INFLUENCE_CAP,
+} from "@/lib/props-cap";
 import { createClient } from "@/lib/supabase/server";
 
 type ActionResult =
@@ -23,6 +26,10 @@ type GivePropsResult =
       message?: string;
       remainingBalance: number;
       totalTokens: number;
+      /** Viewer's cumulative Props on this thread after the gift. */
+      viewerGivenTotal: number;
+      /** True when this gift brought the viewer to the Influence Cap. */
+      reachedMaxProps: boolean;
     }
   | { success: false; error: string };
 
@@ -31,6 +38,21 @@ type RetractPropsResult =
       success: true;
       burnedAmount: number;
       totalTokens: number;
+    }
+  | { success: false; error: string };
+
+type CuratorNoteResult =
+  | {
+      success: true;
+      comment: string | null;
+    }
+  | { success: false; error: string };
+
+type GetCuratorNoteResult =
+  | {
+      success: true;
+      comment: string | null;
+      hasEndorsement: boolean;
     }
   | { success: false; error: string };
 
@@ -69,6 +91,69 @@ function sumTransactionAmounts(
         : 0;
     return sum + Math.max(0, amount);
   }, 0);
+}
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * Ensures a Max Props endorsement row exists for (thread, user).
+ * Comment stays null until the curator publishes a note.
+ */
+async function ensureMaxPropsEndorsement(
+  supabase: SupabaseServerClient,
+  threadId: string,
+  userId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: existing, error: selectError } = await supabase
+    .from("max_props_endorsements")
+    .select("id")
+    .eq("thread_id", threadId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (selectError) {
+    return { ok: false, error: selectError.message };
+  }
+
+  if (existing) {
+    return { ok: true };
+  }
+
+  const { error: insertError } = await supabase
+    .from("max_props_endorsements")
+    .insert({
+      thread_id: threadId,
+      user_id: userId,
+      comment: null,
+    });
+
+  if (insertError) {
+    // Concurrent unlock race: unique (thread_id, user_id) already satisfied.
+    if (insertError.code === "23505") {
+      return { ok: true };
+    }
+    return { ok: false, error: insertError.message };
+  }
+
+  return { ok: true };
+}
+
+async function deleteMaxPropsEndorsement(
+  supabase: SupabaseServerClient,
+  threadId: string,
+  userId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase
+    .from("max_props_endorsements")
+    .delete()
+    .eq("thread_id", threadId)
+    .eq("user_id", userId);
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true };
 }
 
 /**
@@ -405,6 +490,23 @@ export async function giveProps(
     }
   }
 
+  const viewerGivenTotal = previouslyGiven + amount;
+  const reachedMaxProps = viewerGivenTotal >= PROPS_INFLUENCE_CAP;
+
+  if (reachedMaxProps) {
+    const endorsement = await ensureMaxPropsEndorsement(
+      supabase,
+      threadId,
+      user.id
+    );
+    if (!endorsement.ok) {
+      console.error(
+        "[giveProps] failed to ensure max props endorsement:",
+        endorsement.error
+      );
+    }
+  }
+
   // On-demand ISR: Discover feed rankings + thread Props total.
   // Discover lives at `/feed`; thread detail at `/feed/[id]`.
   revalidatePath("/", "layout");
@@ -420,6 +522,8 @@ export async function giveProps(
     userId: user.id,
     remainingBalance,
     totalTokens: nextTotal,
+    viewerGivenTotal,
+    reachedMaxProps,
   });
 
   return {
@@ -427,6 +531,8 @@ export async function giveProps(
     // Always the value returned by the service-role SELECT after UPDATE.
     remainingBalance,
     totalTokens: nextTotal,
+    viewerGivenTotal,
+    reachedMaxProps,
   };
 }
 
@@ -528,6 +634,19 @@ export async function retractProps(
     return { success: false, error: "Failed to update thread Props total." };
   }
 
+  // Drop Max Props curator endorsement once influence falls below the cap.
+  const endorsementDelete = await deleteMaxPropsEndorsement(
+    supabase,
+    threadId,
+    user.id
+  );
+  if (!endorsementDelete.ok) {
+    console.error(
+      "[retractProps] failed to delete max props endorsement:",
+      endorsementDelete.error
+    );
+  }
+
   const syncedTotal =
     typeof updatedThread.total_tokens === "number"
       ? Math.max(0, updatedThread.total_tokens)
@@ -548,6 +667,150 @@ export async function retractProps(
     success: true,
     burnedAmount,
     totalTokens: syncedTotal,
+  };
+}
+
+/**
+ * Loads the current user's Max Props curator note for a thread (if any).
+ */
+export async function getMyMaxPropsEndorsement(
+  threadId: string
+): Promise<GetCuratorNoteResult> {
+  if (!threadId) {
+    return { success: false, error: "Missing thread id." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return { success: false, error: "You must be signed in." };
+  }
+
+  const { data: gifts, error: giftsError } = await supabase
+    .from("token_transactions")
+    .select("amount")
+    .eq("giver_id", user.id)
+    .eq("thread_id", threadId);
+
+  if (giftsError) {
+    return { success: false, error: giftsError.message };
+  }
+
+  const givenTotal = sumTransactionAmounts(gifts);
+  if (givenTotal >= PROPS_INFLUENCE_CAP) {
+    const ensured = await ensureMaxPropsEndorsement(supabase, threadId, user.id);
+    if (!ensured.ok) {
+      return {
+        success: false,
+        error: ensured.error || "Failed to load Max Props endorsement.",
+      };
+    }
+  }
+
+  const { data, error } = await supabase
+    .from("max_props_endorsements")
+    .select("comment")
+    .eq("thread_id", threadId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  return {
+    success: true,
+    hasEndorsement: Boolean(data),
+    comment: data?.comment ?? null,
+  };
+}
+
+/**
+ * Publishes or updates the optional curator note for a Max Props endorsement.
+ */
+export async function publishMaxPropsCuratorNote(
+  threadId: string,
+  comment: string
+): Promise<CuratorNoteResult> {
+  if (!threadId) {
+    return { success: false, error: "Missing thread id." };
+  }
+
+  const trimmed = comment.trim();
+  if (trimmed.length > MAX_PROPS_ENDORSEMENT_COMMENT_LENGTH) {
+    return {
+      success: false,
+      error: `Curator notes can be at most ${MAX_PROPS_ENDORSEMENT_COMMENT_LENGTH.toLocaleString()} characters.`,
+    };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return {
+      success: false,
+      error: "You must be signed in to publish a curator note.",
+    };
+  }
+
+  const { data: gifts, error: giftsError } = await supabase
+    .from("token_transactions")
+    .select("amount")
+    .eq("giver_id", user.id)
+    .eq("thread_id", threadId);
+
+  if (giftsError) {
+    return { success: false, error: giftsError.message };
+  }
+
+  const givenTotal = sumTransactionAmounts(gifts);
+  if (givenTotal < PROPS_INFLUENCE_CAP) {
+    return {
+      success: false,
+      error: `Award ${PROPS_INFLUENCE_CAP} Props to unlock a curator note.`,
+    };
+  }
+
+  const ensured = await ensureMaxPropsEndorsement(supabase, threadId, user.id);
+  if (!ensured.ok) {
+    return {
+      success: false,
+      error: ensured.error || "Failed to create Max Props endorsement.",
+    };
+  }
+
+  const nextComment = trimmed.length > 0 ? trimmed : null;
+
+  const { data: updated, error: updateError } = await supabase
+    .from("max_props_endorsements")
+    .update({ comment: nextComment })
+    .eq("thread_id", threadId)
+    .eq("user_id", user.id)
+    .select("comment")
+    .maybeSingle();
+
+  if (updateError) {
+    return { success: false, error: updateError.message };
+  }
+
+  if (!updated) {
+    return { success: false, error: "Failed to save curator note." };
+  }
+
+  revalidatePath(`/feed/${threadId}`);
+  revalidatePath("/feed");
+
+  return {
+    success: true,
+    comment: updated.comment ?? null,
   };
 }
 

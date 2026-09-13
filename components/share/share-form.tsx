@@ -381,7 +381,7 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
 
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
-          <Label htmlFor="summary">Summary (TL;DR)</Label>
+          <Label htmlFor="summary">Personal Note</Label>
           <Button
             type="button"
             variant="outline"
@@ -400,7 +400,7 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
             ) : (
               <>
                 <Sparkles className="h-4 w-4" />
-                Generate Summary
+                Auto-Summarize
               </>
             )}
           </Button>
@@ -409,7 +409,7 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
           id="summary"
           value={summary}
           onChange={(event) => setSummary(event.target.value)}
-          placeholder="Write a little blurb about this chat - or click Generate Summary"
+          placeholder="Write a personal note or add context about this chat..."
           rows={2}
           disabled={isSubmitting}
           className="min-h-[3.75rem] resize-y"

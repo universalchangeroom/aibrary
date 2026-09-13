@@ -23,10 +23,10 @@ type PublicThreadRow = {
   created_at: string;
 };
 
-function plainTextExcerpt(content: unknown): string {
+function firstPromptText(content: unknown): string {
   const messages = asChatMessages(content);
   const source =
-    messages.find((message) => message.role === "assistant")?.content ??
+    messages.find((message) => message.role === "user")?.content ??
     messages[0]?.content ??
     "";
   const plain = source
@@ -37,7 +37,8 @@ function plainTextExcerpt(content: unknown): string {
     .trim();
 
   if (!plain) return "Open this conversation to read the full exchange.";
-  return plain.length > 240 ? `${plain.slice(0, 237).trimEnd()}…` : plain;
+  if (plain.length > 8000) return `${plain.slice(0, 7997).trimEnd()}…`;
+  return plain;
 }
 
 function modelDisplayName(value: string | null): string {
@@ -49,45 +50,28 @@ function modelDisplayName(value: string | null): string {
   return isPlatformFamily ? sourceModelDisplayName(model) : model;
 }
 
-function normalizedTags(row: PublicThreadRow): string[] {
-  return Array.isArray(row.tags)
-    ? row.tags
-        .filter((tag): tag is string => typeof tag === "string")
-        .map((tag) => tag.trim().replace(/^#+/, ""))
-        .filter(Boolean)
-    : [];
-}
-
 function toThreadCards(
   rows: PublicThreadRow[],
-  usernamesByAuthorId: ReadonlyMap<string, string>,
-  preferredTag: string
+  usernamesByAuthorId: ReadonlyMap<string, string>
 ): ThreadCardProps[] {
-  return rows.map((row) => {
-    const tags = normalizedTags(row);
-    const matchingTag =
-      tags.find(
-        (tag) => tag.toLowerCase() === preferredTag.toLowerCase()
-      ) ?? tags[0];
-
-    return {
-      id: row.id,
-      title: row.title,
-      summary: row.summary?.trim() || plainTextExcerpt(row.content),
-      modelName: modelDisplayName(row.source_model),
-      authorUsername:
-        usernamesByAuthorId.get(row.author_id)?.replace(/^@+/, "") ||
-        "anonymous",
-      propsCount:
-        typeof row.props_count === "number"
-          ? row.props_count
-          : typeof row.total_tokens === "number"
-            ? row.total_tokens
-            : 0,
-      slopCount: typeof row.slop_count === "number" ? row.slop_count : 0,
-      primaryTag: matchingTag || preferredTag || "Uncategorized",
-    };
-  });
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    personalNote: row.summary?.trim() || null,
+    prompt: firstPromptText(row.content),
+    modelName: modelDisplayName(row.source_model),
+    sourceModel: row.source_model?.trim() || null,
+    authorUsername:
+      usernamesByAuthorId.get(row.author_id)?.replace(/^@+/, "") ||
+      "anonymous",
+    propsCount:
+      typeof row.props_count === "number"
+        ? row.props_count
+        : typeof row.total_tokens === "number"
+          ? row.total_tokens
+          : 0,
+    slopCount: typeof row.slop_count === "number" ? row.slop_count : 0,
+  }));
 }
 
 export default async function TagResultsPage({
@@ -138,7 +122,7 @@ export default async function TagResultsPage({
     }
   }
 
-  const threads = toThreadCards(rows, usernamesByAuthorId, decodedTag);
+  const threads = toThreadCards(rows, usernamesByAuthorId);
   const displayTag = decodedTag || "untagged";
   const transcriptLabel =
     threads.length === 1 ? "transcript" : "transcripts";

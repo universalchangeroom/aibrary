@@ -5,9 +5,18 @@ import {
   sourceModelDisplayName,
 } from "@/lib/share-source-model";
 import { createClient } from "@/lib/supabase/server";
-import { asChatMessages } from "@/lib/types";
+import { asChatMessages, type MaxPropsEndorsementWithCurator } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+type EndorsementRow = {
+  id: string;
+  thread_id: string;
+  user_id: string;
+  comment: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 type PublicThreadRow = {
   id: string;
@@ -21,20 +30,23 @@ type PublicThreadRow = {
   props_count: number | null;
   slop_count: number | null;
   created_at: string;
+  max_props_endorsements?: EndorsementRow[] | null;
 };
 
 /** Card props plus fields needed for swimlane taxonomy. */
 type CuratedThread = ThreadCardProps & {
   authorId: string;
-  sourceModel: string;
+  /** Lowercased source_model for frontier swimlane matching. */
+  sourceModelKey: string;
   tags: string[];
   createdAt: string;
 };
 
-function plainTextExcerpt(content: unknown): string {
+/** Full first-user prompt for Discover cards (visual clamp + tooltip handle length). */
+function firstPromptText(content: unknown): string {
   const messages = asChatMessages(content);
   const source =
-    messages.find((message) => message.role === "assistant")?.content ??
+    messages.find((message) => message.role === "user")?.content ??
     messages[0]?.content ??
     "";
   const plain = source
@@ -45,7 +57,9 @@ function plainTextExcerpt(content: unknown): string {
     .trim();
 
   if (!plain) return "Open this conversation to read the full exchange.";
-  return plain.length > 240 ? `${plain.slice(0, 237).trimEnd()}…` : plain;
+  // Soft cap so card props stay reasonable; line-clamp-4 truncates on the card.
+  if (plain.length > 8000) return `${plain.slice(0, 7997).trimEnd()}…`;
+  return plain;
 }
 
 function modelDisplayName(value: string | null): string {
@@ -72,30 +86,70 @@ function propsOf(row: PublicThreadRow): number {
   return 0;
 }
 
+function asEndorsements(
+  value: unknown,
+  usernamesByUserId: ReadonlyMap<string, string>
+): MaxPropsEndorsementWithCurator[] {
+  if (!Array.isArray(value)) return [];
+
+  const rows: MaxPropsEndorsementWithCurator[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    if (typeof row.id !== "string" || typeof row.thread_id !== "string") {
+      continue;
+    }
+    if (typeof row.user_id !== "string" || typeof row.created_at !== "string") {
+      continue;
+    }
+    const curatorUsername =
+      usernamesByUserId.get(row.user_id)?.replace(/^@+/, "") || null;
+    rows.push({
+      id: row.id,
+      thread_id: row.thread_id,
+      user_id: row.user_id,
+      comment: typeof row.comment === "string" ? row.comment : null,
+      created_at: row.created_at,
+      updated_at:
+        typeof row.updated_at === "string" ? row.updated_at : row.created_at,
+      curatorUsername,
+    });
+  }
+
+  return rows.sort(
+    (a, b) => Date.parse(a.created_at) - Date.parse(b.created_at)
+  );
+}
+
 function toCuratedThread(
   row: PublicThreadRow,
-  usernamesByAuthorId: ReadonlyMap<string, string>
+  usernamesByUserId: ReadonlyMap<string, string>
 ): CuratedThread {
   const tags = normalizedTags(row);
   return {
     id: row.id,
     title: row.title,
-    summary: row.summary?.trim() || plainTextExcerpt(row.content),
+    personalNote: row.summary?.trim() || null,
+    prompt: firstPromptText(row.content),
     modelName: modelDisplayName(row.source_model),
+    sourceModel: row.source_model?.trim() || null,
     authorUsername:
-      usernamesByAuthorId.get(row.author_id)?.replace(/^@+/, "") || "anonymous",
+      usernamesByUserId.get(row.author_id)?.replace(/^@+/, "") || "anonymous",
     propsCount: propsOf(row),
     slopCount: typeof row.slop_count === "number" ? row.slop_count : 0,
-    primaryTag: tags[0] || "Uncategorized",
+    maxPropsEndorsements: asEndorsements(
+      row.max_props_endorsements,
+      usernamesByUserId
+    ),
     authorId: row.author_id,
-    sourceModel: (row.source_model ?? "").trim().toLowerCase(),
+    sourceModelKey: (row.source_model ?? "").trim().toLowerCase(),
     tags,
     createdAt: row.created_at,
   };
 }
 
 function haystack(thread: CuratedThread): string {
-  return `${thread.title} ${thread.summary} ${thread.tags.join(" ")}`.toLowerCase();
+  return `${thread.title} ${thread.personalNote ?? ""} ${thread.prompt} ${thread.tags.join(" ")}`.toLowerCase();
 }
 
 function matchesKeywords(thread: CuratedThread, keywords: string[]): boolean {
@@ -111,7 +165,7 @@ function toCards(threads: CuratedThread[]): ThreadCardProps[] {
   return threads.map(
     ({
       authorId: _authorId,
-      sourceModel: _sourceModel,
+      sourceModelKey: _sourceModelKey,
       tags: _tags,
       createdAt: _createdAt,
       ...card
@@ -146,24 +200,52 @@ export default async function FeedPage() {
   const { data, error } = await supabase
     .from("threads")
     .select(
-      "id, author_id, title, content, summary, source_model, tags, total_tokens, props_count, slop_count, created_at"
+      `
+      id,
+      author_id,
+      title,
+      content,
+      summary,
+      source_model,
+      tags,
+      total_tokens,
+      props_count,
+      slop_count,
+      created_at,
+      max_props_endorsements (
+        id,
+        thread_id,
+        user_id,
+        comment,
+        created_at,
+        updated_at
+      )
+    `
     )
     .eq("is_public", true)
     .eq("status", "published")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .order("created_at", {
+      ascending: true,
+      foreignTable: "max_props_endorsements",
+    });
 
   const rows =
     !error && Array.isArray(data) ? (data as unknown as PublicThreadRow[]) : [];
-  const authorIds = Array.from(
-    new Set(rows.map((row) => row.author_id).filter(Boolean))
+  const authorIds = rows.map((row) => row.author_id).filter(Boolean);
+  const endorserIds = rows.flatMap((row) =>
+    (row.max_props_endorsements ?? []).map((endorsement) => endorsement.user_id)
   );
-  const usernamesByAuthorId = new Map<string, string>();
+  const profileIds = Array.from(
+    new Set([...authorIds, ...endorserIds].filter(Boolean))
+  );
+  const usernamesByUserId = new Map<string, string>();
 
-  if (authorIds.length > 0) {
+  if (profileIds.length > 0) {
     const { data: profiles } = await supabase
       .from("profiles")
       .select("id, username")
-      .in("id", authorIds);
+      .in("id", profileIds);
 
     for (const profile of profiles ?? []) {
       if (
@@ -171,7 +253,7 @@ export default async function FeedPage() {
         typeof profile.username === "string" &&
         profile.username.trim()
       ) {
-        usernamesByAuthorId.set(
+        usernamesByUserId.set(
           profile.id,
           profile.username.trim().replace(/^@+/, "")
         );
@@ -179,9 +261,7 @@ export default async function FeedPage() {
     }
   }
 
-  const curated = rows.map((row) =>
-    toCuratedThread(row, usernamesByAuthorId)
-  );
+  const curated = rows.map((row) => toCuratedThread(row, usernamesByUserId));
 
   const topOfTheProps = sortByPropsDesc(curated).slice(0, 15);
 
@@ -224,7 +304,7 @@ export default async function FeedPage() {
   const frontierLanes = FRONTIER_BUCKETS.map((bucket) => {
     const threads = sortByPropsDesc(
       curated.filter((thread) =>
-        matchesFrontierModel(thread.sourceModel, bucket.patterns)
+        matchesFrontierModel(thread.sourceModelKey, bucket.patterns)
       )
     );
     for (const thread of threads) claimedByFrontier.add(thread.id);

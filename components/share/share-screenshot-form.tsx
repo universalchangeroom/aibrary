@@ -312,48 +312,21 @@ export function ShareScreenshotForm() {
       <div className="space-y-2">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <Label htmlFor="share-screenshot-tags">Tags</Label>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleSuggestTags}
-              disabled={
-                isSubmitting ||
-                isGeneratingPdf ||
-                isSummarizing ||
-                !rawText.trim()
-              }
-            >
-              <Sparkles className="h-4 w-4" />
-              Suggest Tags
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void handleGenerateSummary()}
-              disabled={
-                isSubmitting ||
-                isGeneratingPdf ||
-                isSummarizing ||
-                !rawText.trim()
-              }
-              className="disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isSummarizing ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Summarizing…
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  Generate Summary
-                </>
-              )}
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleSuggestTags}
+            disabled={
+              isSubmitting ||
+              isGeneratingPdf ||
+              isSummarizing ||
+              !rawText.trim()
+            }
+          >
+            <Sparkles className="h-4 w-4" />
+            Suggest Tags
+          </Button>
         </div>
         <Input
           id="share-screenshot-tags"
@@ -385,12 +358,39 @@ export function ShareScreenshotForm() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="share-screenshot-summary">Summary (TL;DR)</Label>
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="share-screenshot-summary">Personal Note</Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void handleGenerateSummary()}
+            disabled={
+              isSubmitting ||
+              isGeneratingPdf ||
+              isSummarizing ||
+              !rawText.trim()
+            }
+            className="shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSummarizing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Summarizing…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4" />
+                Auto-Summarize
+              </>
+            )}
+          </Button>
+        </div>
         <Textarea
           id="share-screenshot-summary"
           value={summary}
           onChange={(event) => setSummary(event.target.value)}
-          placeholder="Write a little blurb about this chat - or click Generate Summary"
+          placeholder="Write a personal note or add context about this chat..."
           rows={3}
           disabled={isSubmitting || isGeneratingPdf}
           className="min-h-[4.5rem] resize-y"
