@@ -58,6 +58,7 @@ export function ShareScreenshotForm() {
   const [customModelName, setCustomModelName] = useState("");
   const [tagsInput, setTagsInput] = useState("");
   const [summary, setSummary] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
@@ -214,6 +215,7 @@ export function ShareScreenshotForm() {
           title: trimmedTitle,
           source_model: model,
           summary: summary.trim() || null,
+          source_url: sourceUrl.trim() || null,
           tags,
           content,
           is_public: true,
@@ -395,6 +397,29 @@ export function ShareScreenshotForm() {
           disabled={isSubmitting || isGeneratingPdf}
           className="min-h-[4.5rem] resize-y"
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="share-screenshot-source-url">
+          Original Chat Link (Optional)
+        </Label>
+        <Input
+          id="share-screenshot-source-url"
+          type="url"
+          inputMode="url"
+          value={sourceUrl}
+          onChange={(event) => setSourceUrl(event.target.value)}
+          placeholder="e.g., https://chatgpt.com/share/..."
+          disabled={isSubmitting || isGeneratingPdf}
+          aria-describedby="share-screenshot-source-url-hint"
+        />
+        <p
+          id="share-screenshot-source-url-hint"
+          className="text-xs text-muted-foreground"
+        >
+          Provide the public link to the original chat for authenticity
+          verification.
+        </p>
       </div>
     </div>
   );

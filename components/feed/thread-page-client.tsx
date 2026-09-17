@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 import { ThreadActions } from "@/components/feed/thread-actions";
 import { ThreadDetailView } from "@/components/feed/thread-detail-view";
+import { useReaderTabs } from "@/components/reader/reader-tabs-provider";
 import { Button } from "@/components/ui/button";
+import { FEED_TAB_ID } from "@/lib/reader-tabs";
 import { normalizePropsTotal } from "@/lib/props-display";
 import type { ThreadWithFootnotes } from "@/lib/types";
 
@@ -28,6 +29,7 @@ export function ThreadPageClient({
   viewerHasStarred,
   viewerGivenProps = 0,
 }: ThreadPageClientProps) {
+  const { setActiveTab } = useReaderTabs();
   const serverPropsTotal = normalizePropsTotal(
     thread.props_count ?? thread.total_tokens
   );
@@ -49,11 +51,15 @@ export function ThreadPageClient({
   return (
     <>
       <div className="flex items-center justify-between gap-3">
-        <Button variant="ghost" size="sm" className="-ml-2 w-fit" asChild>
-          <Link href="/feed">
-            <ArrowLeft className="h-4 w-4" />
-            Back to feed
-          </Link>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 w-fit"
+          type="button"
+          onClick={() => setActiveTab(FEED_TAB_ID)}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to feed
         </Button>
 
         <ThreadActions

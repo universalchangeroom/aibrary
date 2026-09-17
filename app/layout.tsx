@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/layout/site-header";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { OnboardingModal } from "@/components/OnboardingModal";
 import { AppProviders } from "@/components/providers/app-providers";
+import { ReaderWorkbenchChrome } from "@/components/reader/reader-workbench-chrome";
 
 import "./globals.css";
 
@@ -38,6 +39,7 @@ export default function RootLayout({
         <AppProviders>
           <div className="flex min-h-screen flex-col">
             <SiteHeader />
+            <ReaderWorkbenchChrome />
             <OnboardingModal />
             <div className="flex-1">{children}</div>
             <SiteFooter />

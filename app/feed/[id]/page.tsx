@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { ThreadPageClient } from "@/components/feed/thread-page-client";
+import { ThreadRouteBridge } from "@/components/reader/thread-route-bridge";
 import { fetchAuthorsByIds } from "@/lib/author-profile";
 import { ensureViewerPropsBalance } from "@/lib/props-balance";
 import { createClient } from "@/lib/supabase/server";
@@ -165,15 +166,21 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-6 py-12">
-      <ThreadPageClient
-        thread={thread}
-        isAuthenticated={Boolean(user)}
-        currentUserId={currentUserId}
-        viewerTokenBalance={viewerTokenBalance}
-        viewerHasStarred={viewerHasStarred}
-        viewerGivenProps={viewerGivenProps}
-      />
-    </main>
+    <ThreadRouteBridge
+      threadId={thread.id}
+      title={thread.title}
+      model={(thread.source_model ?? "Other").trim() || "Other"}
+    >
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-6 py-12">
+        <ThreadPageClient
+          thread={thread}
+          isAuthenticated={Boolean(user)}
+          currentUserId={currentUserId}
+          viewerTokenBalance={viewerTokenBalance}
+          viewerHasStarred={viewerHasStarred}
+          viewerGivenProps={viewerGivenProps}
+        />
+      </main>
+    </ThreadRouteBridge>
   );
 }

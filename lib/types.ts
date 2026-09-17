@@ -53,6 +53,8 @@ export interface Thread {
   title: string;
   content: ChatMessage[];
   source_model: string | null;
+  /** Optional public share URL of the original AI conversation. */
+  source_url?: string | null;
   summary?: string | null;
   tags: string[];
   is_public: boolean;

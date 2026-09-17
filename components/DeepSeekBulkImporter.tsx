@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import JSZip from "jszip";
 import {
   FileDown,
@@ -12,6 +12,11 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { getViewerPublishQuota } from "@/lib/actions/publish-quota";
+import {
+  DAILY_PUBLISH_LIMIT,
+  type PublishQuotaSnapshot,
+} from "@/lib/publish-quota";
 
 export interface DeepSeekImportedMessage {
   role: string;
@@ -401,6 +406,18 @@ export function DeepSeekBulkImporter() {
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [quota, setQuota] = useState<PublishQuotaSnapshot | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const next = await getViewerPublishQuota();
+      if (!cancelled) setQuota(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function readFiles(files: File[]) {
     if (files.length === 0 || isUploading) return;
@@ -509,7 +526,12 @@ export function DeepSeekBulkImporter() {
   }
 
   const selectedCount = selectedChatIds.size;
-  const canPublish = selectedCount > 0 && selectedCount <= 5;
+  const isAdminPublisher = quota?.isAdmin === true;
+  const publishSelectionCap = isAdminPublisher
+    ? Number.POSITIVE_INFINITY
+    : Math.max(0, quota?.remaining ?? DAILY_PUBLISH_LIMIT);
+  const canPublish =
+    selectedCount > 0 && selectedCount <= publishSelectionCap;
   const canDownloadPdfs = selectedCount > 0 && selectedCount <= 10;
   const canDownloadMarkdown = selectedCount > 0;
   const allSelected =
@@ -563,7 +585,9 @@ export function DeepSeekBulkImporter() {
                   🔒 100% Private (Client-Side Memory)
                 </span>
                 <span className="rounded-full border border-amber-300 bg-amber-50/80 px-3 py-1 text-xs font-medium text-amber-900">
-                  ⚡ Publish up to 5 curated threads daily
+                  {isAdminPublisher
+                    ? "⚡ Admin: Unlimited publishes"
+                    : `⚡ Publish up to ${DAILY_PUBLISH_LIMIT} curated threads daily`}
                 </span>
                 <span className="rounded-full border border-orange-300 bg-orange-50/80 px-3 py-1 text-xs font-medium text-orange-900">
                   📦 Bulk export unlimited Markdown ZIPs
@@ -630,7 +654,9 @@ export function DeepSeekBulkImporter() {
                 }
               >
                 <Send className="h-4 w-4" />
-                Publish to Discover (Max 5)
+                {isAdminPublisher
+                  ? "Publish to Discover (Unlimited)"
+                  : `Publish to Discover (Max ${DAILY_PUBLISH_LIMIT})`}
               </Button>
               <Button
                 type="button"
@@ -665,9 +691,11 @@ export function DeepSeekBulkImporter() {
               </Button>
             </div>
 
-            {selectedCount > 5 ? (
+            {!isAdminPublisher && selectedCount > publishSelectionCap ? (
               <p className="text-xs font-medium text-red-700">
-                Reduce selection to 5 or fewer to publish to Discover.
+                {publishSelectionCap === 0
+                  ? `Daily publish limit reached (${DAILY_PUBLISH_LIMIT} per UTC day).`
+                  : `Reduce selection to ${publishSelectionCap} or fewer to publish to Discover.`}
               </p>
             ) : null}
             {selectedCount > 10 ? (

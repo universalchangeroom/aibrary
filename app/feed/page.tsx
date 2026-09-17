@@ -1,5 +1,6 @@
 import { ConceptSwimlane } from "@/components/ConceptSwimlane";
 import type { ThreadCardProps } from "@/components/ThreadCard";
+import { DiscoverWorkbench } from "@/components/reader/discover-workbench";
 import {
   SHARE_SOURCE_MODELS,
   sourceModelDisplayName,
@@ -25,6 +26,7 @@ type PublicThreadRow = {
   content: unknown;
   summary: string | null;
   source_model: string | null;
+  source_url: string | null;
   tags: unknown;
   total_tokens: number | null;
   props_count: number | null;
@@ -133,6 +135,7 @@ function toCuratedThread(
     prompt: firstPromptText(row.content),
     modelName: modelDisplayName(row.source_model),
     sourceModel: row.source_model?.trim() || null,
+    sourceUrl: row.source_url?.trim() || null,
     authorUsername:
       usernamesByUserId.get(row.author_id)?.replace(/^@+/, "") || "anonymous",
     propsCount: propsOf(row),
@@ -207,6 +210,7 @@ export default async function FeedPage() {
       content,
       summary,
       source_model,
+      source_url,
       tags,
       total_tokens,
       props_count,
@@ -329,62 +333,64 @@ export default async function FeedPage() {
   }
 
   return (
-    <div className="relative min-h-[calc(100vh-3.5rem)] overflow-x-hidden bg-slate-950 text-white">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-950 via-violet-950 to-slate-950"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -left-24 top-10 h-72 w-72 rounded-full bg-blue-500/25 blur-3xl"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute right-0 top-24 h-80 w-80 rounded-full bg-fuchsia-500/20 blur-3xl"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute bottom-0 left-1/3 h-64 w-64 rounded-full bg-yellow-400/10 blur-3xl"
-      />
+    <DiscoverWorkbench>
+      <div className="relative min-h-[calc(100vh-3.5rem)] overflow-x-hidden bg-slate-950 text-white">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-950 via-violet-950 to-slate-950"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -left-24 top-10 h-72 w-72 rounded-full bg-blue-500/25 blur-3xl"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute right-0 top-24 h-80 w-80 rounded-full bg-fuchsia-500/20 blur-3xl"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-0 left-1/3 h-64 w-64 rounded-full bg-yellow-400/10 blur-3xl"
+        />
 
-      <main className="relative z-10 space-y-5 py-6 pb-12">
-        {error ? (
-          <div className="mx-auto max-w-7xl px-6">
-            <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 px-6 py-12 text-center text-slate-300 backdrop-blur-md">
-              The Discover feed is temporarily unavailable.
+        <main className="relative z-10 space-y-5 py-6 pb-12">
+          {error ? (
+            <div className="mx-auto max-w-7xl px-6">
+              <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 px-6 py-12 text-center text-slate-300 backdrop-blur-md">
+                The Discover feed is temporarily unavailable.
+              </div>
             </div>
-          </div>
-        ) : curated.length === 0 ? (
-          <div className="mx-auto max-w-7xl px-6">
-            <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 px-6 py-12 text-center text-slate-300 backdrop-blur-md">
-              No published conversations yet. Share the first one.
+          ) : curated.length === 0 ? (
+            <div className="mx-auto max-w-7xl px-6">
+              <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 px-6 py-12 text-center text-slate-300 backdrop-blur-md">
+                No published conversations yet. Share the first one.
+              </div>
             </div>
-          </div>
-        ) : (
-          <>
-            {topicLanes.map((lane) => (
-              <ConceptSwimlane
-                key={lane.title}
-                categoryName={lane.title}
-                threads={toCards(lane.threads)}
-              />
-            ))}
+          ) : (
+            <>
+              {topicLanes.map((lane) => (
+                <ConceptSwimlane
+                  key={lane.title}
+                  categoryName={lane.title}
+                  threads={toCards(lane.threads)}
+                />
+              ))}
 
-            {frontierLanes.map((lane) => (
-              <ConceptSwimlane
-                key={lane.title}
-                categoryName={lane.title}
-                threads={toCards(lane.threads)}
-              />
-            ))}
+              {frontierLanes.map((lane) => (
+                <ConceptSwimlane
+                  key={lane.title}
+                  categoryName={lane.title}
+                  threads={toCards(lane.threads)}
+                />
+              ))}
 
-            <ConceptSwimlane
-              categoryName="Open Source / Other"
-              threads={toCards(openSourceOther)}
-            />
-          </>
-        )}
-      </main>
-    </div>
+              <ConceptSwimlane
+                categoryName="Open Source / Other"
+                threads={toCards(openSourceOther)}
+              />
+            </>
+          )}
+        </main>
+      </div>
+    </DiscoverWorkbench>
   );
 }

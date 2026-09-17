@@ -3,6 +3,11 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 import { getHonestStartBalance } from "@/lib/props-balance";
+import {
+  DAILY_PUBLISH_LIMIT,
+  isPublishAdmin,
+  startOfUtcDayIso,
+} from "@/lib/publish-quota";
 import { normalizeSourceModelForStorage } from "@/lib/share-source-model";
 import { asChatMessages } from "@/lib/types";
 import { parseRawText } from "@/lib/parse-raw-text";
@@ -26,10 +31,12 @@ interface PublishThreadBody {
   transcript?: unknown;
   source_model?: unknown;
   source?: unknown;
+  source_url?: unknown;
+  /** @deprecated Prefer `source_url`. */
+  originalUrl?: unknown;
   summary?: unknown;
   tags?: unknown;
   is_public?: unknown;
-  originalUrl?: unknown;
 }
 
 function getBearerToken(request: Request): string | null {
@@ -75,7 +82,7 @@ function sourceModelFromPayload(body: PublishThreadBody): string | null {
 /**
  * POST /api/threads
  * Authorization: Bearer <supabase_access_token>
- * Body: { title, content, source_model?, summary?, tags?, is_public? }
+ * Body: { title, content, source_model?, source_url?, summary?, tags?, is_public? }
  *   `content` is the jsonb transcript: [{ role, content }].
  *   Aliases: `messages` (same array), `transcript` (raw Markdown string).
  *
@@ -140,6 +147,36 @@ export async function POST(request: Request) {
     typeof body.summary === "string" && body.summary.trim()
       ? body.summary.trim().slice(0, 2_000)
       : null;
+  const rawSourceUrl =
+    (typeof body.source_url === "string" && body.source_url.trim()
+      ? body.source_url.trim()
+      : null) ??
+    (typeof body.originalUrl === "string" && body.originalUrl.trim()
+      ? body.originalUrl.trim()
+      : null);
+  const sourceUrl = rawSourceUrl ? rawSourceUrl.slice(0, 2_000) : null;
+  if (sourceUrl) {
+    try {
+      const parsed = new URL(sourceUrl);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Original chat link must be an http(s) URL.",
+          },
+          { status: 400 }
+        );
+      }
+    } catch {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Original chat link must be a valid URL.",
+        },
+        { status: 400 }
+      );
+    }
+  }
   const isPublic = body.is_public !== false;
   const sourceModel = sourceModelFromPayload(body);
 
@@ -210,6 +247,42 @@ export async function POST(request: Request) {
     console.warn("[api/threads] profile upsert:", profileError.message);
   }
 
+  // Daily publish quota (UTC day). Admins bypass entirely.
+  const { data: profileFlags } = await supabase
+    .from("profiles")
+    .select("is_admin")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const adminPublisher = isPublishAdmin(user, profileFlags?.is_admin);
+  if (!adminPublisher) {
+    const { count: publishedToday, error: quotaError } = await supabase
+      .from("threads")
+      .select("id", { count: "exact", head: true })
+      .eq("author_id", user.id)
+      .gte("created_at", startOfUtcDayIso());
+
+    if (quotaError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: quotaError.message || "Unable to verify publish quota.",
+        },
+        { status: 500 }
+      );
+    }
+
+    if ((publishedToday ?? 0) >= DAILY_PUBLISH_LIMIT) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Daily publish limit reached (${DAILY_PUBLISH_LIMIT} curated threads per UTC day).`,
+        },
+        { status: 429 }
+      );
+    }
+  }
+
   // Image Markdown in any turn → hold for admin review off the public feed.
   const status = resolveThreadStatusForContent(messagesToInsert);
   const pendingReview = status === "pending_review";
@@ -221,6 +294,7 @@ export async function POST(request: Request) {
       title,
       content: messagesToInsert,
       source_model: sourceModel,
+      source_url: sourceUrl,
       summary,
       tags,
       is_public: isPublic,

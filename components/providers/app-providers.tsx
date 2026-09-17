@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 
 import { AuthProvider } from "@/components/providers/auth-provider";
+import { ReaderTabsProvider } from "@/components/reader/reader-tabs-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 /**
@@ -12,9 +13,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <AuthProvider>
-      <TooltipProvider delayDuration={250} skipDelayDuration={150}>
-        {children}
-      </TooltipProvider>
+      <ReaderTabsProvider>
+        <TooltipProvider delayDuration={250} skipDelayDuration={150}>
+          {children}
+        </TooltipProvider>
+      </ReaderTabsProvider>
     </AuthProvider>
   );
 }

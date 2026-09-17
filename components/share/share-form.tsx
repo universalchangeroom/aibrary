@@ -74,6 +74,7 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
   const [tagsInput, setTagsInput] = useState("");
   const [transcriptText, setTranscriptText] = useState("");
   const [summary, setSummary] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -273,6 +274,7 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
           title: trimmedTitle,
           source_model: modelToSubmit,
           summary: summary.trim() || null,
+          source_url: sourceUrl.trim() || null,
           tags,
           content,
           is_public: true,
@@ -414,6 +416,27 @@ export const ShareForm = forwardRef<ShareFormHandle>(function ShareForm(
           disabled={isSubmitting}
           className="min-h-[3.75rem] resize-y"
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="source-url">Original Chat Link (Optional)</Label>
+        <Input
+          id="source-url"
+          type="url"
+          inputMode="url"
+          value={sourceUrl}
+          onChange={(event) => setSourceUrl(event.target.value)}
+          placeholder="e.g., https://chatgpt.com/share/..."
+          disabled={isSubmitting}
+          aria-describedby="source-url-hint"
+        />
+        <p
+          id="source-url-hint"
+          className="text-xs text-muted-foreground"
+        >
+          Provide the public link to the original chat for authenticity
+          verification.
+        </p>
       </div>
 
       <div className="space-y-2">

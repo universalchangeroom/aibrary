@@ -11,6 +11,7 @@ import {
   type ShareFormHandle,
 } from "@/components/share/share-form";
 import { ShareScreenshotForm } from "@/components/share/share-screenshot-form";
+import { PublishQuotaBanner } from "@/components/share/publish-quota-banner";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -183,6 +184,7 @@ export function ShareWorkspace() {
       ) : null}
 
       <Tabs value={tab} onValueChange={handleTabChange} className="w-full">
+        <PublishQuotaBanner className="mb-4" />
         <TabsList className={SHARE_TAB_LIST_CLASS}>
           <TabsTrigger value="paste">Paste transcript</TabsTrigger>
           <TabsTrigger value="screenshot">Screenshot</TabsTrigger>

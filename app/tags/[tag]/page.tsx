@@ -16,6 +16,7 @@ type PublicThreadRow = {
   content: unknown;
   summary: string | null;
   source_model: string | null;
+  source_url: string | null;
   tags: unknown;
   total_tokens: number | null;
   props_count: number | null;
@@ -61,6 +62,7 @@ function toThreadCards(
     prompt: firstPromptText(row.content),
     modelName: modelDisplayName(row.source_model),
     sourceModel: row.source_model?.trim() || null,
+    sourceUrl: row.source_url?.trim() || null,
     authorUsername:
       usernamesByAuthorId.get(row.author_id)?.replace(/^@+/, "") ||
       "anonymous",
@@ -88,7 +90,7 @@ export default async function TagResultsPage({
   const { data, error } = await supabase
     .from("threads")
     .select(
-      "id, author_id, title, content, summary, source_model, tags, total_tokens, props_count, slop_count, created_at"
+      "id, author_id, title, content, summary, source_model, source_url, tags, total_tokens, props_count, slop_count, created_at"
     )
     .eq("is_public", true)
     .eq("status", "published")

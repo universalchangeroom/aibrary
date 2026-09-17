@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import { Flag, MoreHorizontal } from "lucide-react";
+import { Flag, MoreHorizontal, ExternalLink } from "lucide-react";
 
 import { MrSlopFace } from "@/components/MrSlopFace";
 import { CuratorNotesDrawer } from "@/components/feed/curator-notes-drawer";
 import { SourceModelIcon } from "@/components/feed/source-model-icon";
+import { useReaderTabs } from "@/components/reader/reader-tabs-provider";
 import { ReportThreadModal } from "@/components/ReportThreadModal";
 import {
   Tooltip,
@@ -29,6 +30,8 @@ export interface ThreadCardProps {
   modelName: string;
   /** Raw stored source_model (used for logo mapping). */
   sourceModel?: string | null;
+  /** Optional public share URL of the original AI conversation. */
+  sourceUrl?: string | null;
   authorUsername: string;
   propsCount: number;
   slopCount: number;
@@ -42,6 +45,21 @@ function usernameMonogram(username: string): string {
   return cleaned.slice(0, Math.min(2, cleaned.length)).toUpperCase();
 }
 
+/** Returns a safe http(s) URL string, or null if missing/invalid. */
+function asHttpUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    return trimmed;
+  } catch {
+    return null;
+  }
+}
+
 export function ThreadCard({
   id,
   title,
@@ -49,6 +67,7 @@ export function ThreadCard({
   prompt,
   modelName,
   sourceModel,
+  sourceUrl,
   authorUsername,
   propsCount,
   slopCount,
@@ -56,10 +75,12 @@ export function ThreadCard({
 }: ThreadCardProps) {
   const router = useRouter();
   const { user } = useAuth();
+  const { openTab } = useReaderTabs();
   const username = authorUsername.replace(/^@+/, "") || "anonymous";
   const note = personalNote?.trim() || "";
   const hasPersonalNote = note.length > 0;
   const modelIconKey = (sourceModel?.trim() || modelName).trim();
+  const originalChatUrl = asHttpUrl(sourceUrl);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
@@ -124,6 +145,26 @@ export function ThreadCard({
     event.stopPropagation();
   }
 
+  function handleOpenInReader(event: MouseEvent<HTMLAnchorElement>) {
+    // Allow modified clicks to use normal browser tab/window behavior.
+    if (
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey ||
+      event.button !== 0
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    openTab({
+      id,
+      title,
+      model: modelIconKey || "Other",
+    });
+  }
+
   return (
     <>
       <article
@@ -135,6 +176,7 @@ export function ThreadCard({
         <Link
           href={`/feed/${id}`}
           aria-label={`Open ${title}`}
+          onClick={handleOpenInReader}
           className="absolute inset-0 z-0 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
         />
 
@@ -256,29 +298,50 @@ export function ThreadCard({
           </Tooltip>
 
           <footer className="mt-auto flex items-end justify-between gap-2 pt-2.5">
-            <Link
-              href={`/user/${encodeURIComponent(username)}`}
-              onClick={handleUsernameClick}
-              className={cn(
-                "pointer-events-auto inline-flex min-w-0 max-w-[48%] items-center gap-1.5 rounded-md px-0.5 py-0.5",
-                "text-xs font-medium text-white/85 transition-colors",
-                "hover:bg-white/10 hover:text-white",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
-              )}
-              aria-label={`View @${username}'s profile`}
-            >
-              <span
+            <div className="flex min-w-0 max-w-[55%] flex-col gap-0.5">
+              <Link
+                href={`/user/${encodeURIComponent(username)}`}
+                onClick={handleUsernameClick}
                 className={cn(
-                  "flex h-5 w-5 shrink-0 items-center justify-center rounded-full",
-                  "border border-rose-400/35 bg-rose-500/20",
-                  "font-serif text-[0.55rem] font-bold tracking-wide text-rose-100"
+                  "pointer-events-auto inline-flex min-w-0 items-center gap-1.5 rounded-md px-0.5 py-0.5",
+                  "text-xs font-medium text-white/85 transition-colors",
+                  "hover:bg-white/10 hover:text-white",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
                 )}
-                aria-hidden
+                aria-label={`View @${username}'s profile`}
               >
-                {usernameMonogram(username)}
-              </span>
-              <span className="truncate">@{username}</span>
-            </Link>
+                <span
+                  className={cn(
+                    "flex h-5 w-5 shrink-0 items-center justify-center rounded-full",
+                    "border border-rose-400/35 bg-rose-500/20",
+                    "font-serif text-[0.55rem] font-bold tracking-wide text-rose-100"
+                  )}
+                  aria-hidden
+                >
+                  {usernameMonogram(username)}
+                </span>
+                <span className="truncate">@{username}</span>
+              </Link>
+
+              {originalChatUrl ? (
+                <a
+                  href={originalChatUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(event) => event.stopPropagation()}
+                  className={cn(
+                    "pointer-events-auto inline-flex max-w-full items-center gap-1 px-0.5",
+                    "font-serif text-[0.65rem] italic leading-none tracking-wide",
+                    "text-amber-200/55 underline-offset-2 transition-colors",
+                    "hover:text-amber-100/80 hover:underline",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50"
+                  )}
+                >
+                  <span className="truncate">Original Chat</span>
+                  <ExternalLink className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
+                </a>
+              ) : null}
+            </div>
 
             <div className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-white/90">
               <span
