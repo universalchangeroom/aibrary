@@ -30,7 +30,7 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
   const { data, error } = await supabase
     .from("threads")
     .select(
-      "id, author_id, title, content, source_model, tags, is_public, status, total_tokens, props_count, slop_count, created_at, updated_at, footnotes(*)"
+      "id, author_id, title, content, source_model, source_url, artifact_url, artifact_type, tags, is_public, status, total_tokens, props_count, slop_count, created_at, updated_at, footnotes(*)"
     )
     .eq("id", id)
     .order("created_at", { ascending: true, foreignTable: "footnotes" })
@@ -171,16 +171,14 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
       title={thread.title}
       model={(thread.source_model ?? "Other").trim() || "Other"}
     >
-      <main className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-6 py-12">
-        <ThreadPageClient
-          thread={thread}
-          isAuthenticated={Boolean(user)}
-          currentUserId={currentUserId}
-          viewerTokenBalance={viewerTokenBalance}
-          viewerHasStarred={viewerHasStarred}
-          viewerGivenProps={viewerGivenProps}
-        />
-      </main>
+      <ThreadPageClient
+        thread={thread}
+        isAuthenticated={Boolean(user)}
+        currentUserId={currentUserId}
+        viewerTokenBalance={viewerTokenBalance}
+        viewerHasStarred={viewerHasStarred}
+        viewerGivenProps={viewerGivenProps}
+      />
     </ThreadRouteBridge>
   );
 }

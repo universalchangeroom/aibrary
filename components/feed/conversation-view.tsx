@@ -34,6 +34,8 @@ interface ConversationViewProps {
   /** When true, Expand/Collapse All is not rendered inside the conversation. */
   hideExpandControls?: boolean;
   onExpandStateChange?: (state: ConversationExpandState) => void;
+  /** `glass` = dark expanded-card reading surface. */
+  tone?: "default" | "glass";
 }
 
 type ViewTurn =
@@ -50,7 +52,28 @@ type ViewTurn =
       index: number;
     };
 
-function RoleBadge({ isUser }: { isUser: boolean }) {
+function RoleBadge({
+  isUser,
+  tone,
+}: {
+  isUser: boolean;
+  tone: "default" | "glass";
+}) {
+  if (tone === "glass") {
+    return (
+      <span
+        className={cn(
+          "rounded-md px-2 py-0.5 text-xs font-semibold tracking-wide",
+          isUser
+            ? "bg-amber-400/15 text-amber-100"
+            : "bg-cyan-400/15 text-cyan-100"
+        )}
+      >
+        {isUser ? "USER" : "AI"}
+      </span>
+    );
+  }
+
   return (
     <span
       className={cn(
@@ -65,7 +88,16 @@ function RoleBadge({ isUser }: { isUser: boolean }) {
   );
 }
 
-function messageShellClass(isUser: boolean) {
+function messageShellClass(isUser: boolean, tone: "default" | "glass") {
+  if (tone === "glass") {
+    return cn(
+      "w-full rounded-xl border p-4 sm:p-5",
+      isUser
+        ? "border-white/10 bg-white/5 text-stone-100"
+        : "border-transparent bg-transparent text-stone-200"
+    );
+  }
+
   return cn(
     "w-full rounded-xl border p-4 sm:p-5",
     isUser
@@ -110,6 +142,7 @@ function MessageBody({
   onMessageContentChange,
   onRemoveMessage,
   chevron,
+  tone = "default",
 }: {
   message: ChatMessage;
   isUser: boolean;
@@ -118,14 +151,18 @@ function MessageBody({
   onMessageContentChange?: (index: number, content: string) => void;
   onRemoveMessage?: (index: number) => void;
   chevron?: boolean;
+  tone?: "default" | "glass";
 }) {
   return (
-    <article className={messageShellClass(isUser)}>
+    <article className={messageShellClass(isUser, tone)}>
       <div className="mb-3 flex items-center justify-between gap-2">
-        <RoleBadge isUser={isUser} />
+        <RoleBadge isUser={isUser} tone={tone} />
         {chevron ? (
           <ChevronDown
-            className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-180"
+            className={cn(
+              "h-4 w-4 shrink-0 transition-transform duration-200 group-open:rotate-180",
+              tone === "glass" ? "text-white/50" : "text-muted-foreground"
+            )}
             aria-hidden
           />
         ) : null}
@@ -134,7 +171,12 @@ function MessageBody({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-destructive"
+            className={cn(
+              "h-8 w-8 shrink-0 p-0 hover:text-destructive",
+              tone === "glass"
+                ? "text-white/50 hover:bg-white/10"
+                : "text-muted-foreground"
+            )}
             onClick={() => onRemoveMessage(index)}
             aria-label={`Delete ${isUser ? "user" : "AI"} message`}
           >
@@ -148,11 +190,20 @@ function MessageBody({
           content={message.content}
           onChange={(markdown) => onMessageContentChange(index, markdown)}
           placeholder={isUser ? "User message…" : "Assistant / AI response…"}
-          className="bg-background"
+          className={
+            tone === "glass" ? "bg-black/30 text-stone-100" : "bg-background"
+          }
           editorClassName="min-h-[120px]"
         />
       ) : (
-        <MarkdownRenderer content={message.content} />
+        <MarkdownRenderer
+          content={message.content}
+          className={
+            tone === "glass"
+              ? "prose-invert prose-headings:text-amber-50 prose-p:text-stone-200 prose-strong:text-white prose-a:text-cyan-300"
+              : undefined
+          }
+        />
       )}
     </article>
   );
@@ -186,6 +237,7 @@ export const ConversationView = forwardRef<
     onAddMessage,
     hideExpandControls = false,
     onExpandStateChange,
+    tone = "default",
   },
   ref
 ) {
@@ -243,7 +295,14 @@ export const ConversationView = forwardRef<
   return (
     <section className="flex w-full flex-col gap-5" aria-label="Conversation">
       {list.length === 0 ? (
-        <p className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+        <p
+          className={cn(
+            "rounded-xl border border-dashed px-4 py-8 text-center text-sm",
+            tone === "glass"
+              ? "border-white/15 text-white/55"
+              : "text-muted-foreground"
+          )}
+        >
           No transcript was saved for this thread.
         </p>
       ) : null}
@@ -254,6 +313,11 @@ export const ConversationView = forwardRef<
             type="button"
             variant="outline"
             size="sm"
+            className={
+              tone === "glass"
+                ? "border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                : undefined
+            }
             onClick={toggleExpandAll}
             aria-pressed={allExpanded}
           >
@@ -273,6 +337,7 @@ export const ConversationView = forwardRef<
                 isUser={isUser}
                 index={index}
                 isEditing
+                tone={tone}
                 onMessageContentChange={onMessageContentChange}
                 onRemoveMessage={onRemoveMessage}
               />
@@ -287,6 +352,7 @@ export const ConversationView = forwardRef<
                   isUser={turn.message.role === "user"}
                   index={turn.index}
                   isEditing={false}
+                  tone={tone}
                 />
               );
             }
@@ -303,7 +369,10 @@ export const ConversationView = forwardRef<
                 <summary
                   className={cn(
                     "cursor-pointer list-none [&::-webkit-details-marker]:hidden",
-                    "rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    "rounded-xl outline-none focus-visible:ring-2",
+                    tone === "glass"
+                      ? "focus-visible:ring-cyan-400/50"
+                      : "focus-visible:ring-ring"
                   )}
                 >
                   <MessageBody
@@ -311,6 +380,7 @@ export const ConversationView = forwardRef<
                     isUser
                     index={turn.userIndex}
                     isEditing={false}
+                    tone={tone}
                     chevron
                   />
                 </summary>
@@ -321,9 +391,17 @@ export const ConversationView = forwardRef<
                     isUser={false}
                     index={turn.assistantIndex ?? turn.userIndex + 1}
                     isEditing={false}
+                    tone={tone}
                   />
                 ) : (
-                  <p className="w-full rounded-xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
+                  <p
+                    className={cn(
+                      "w-full rounded-xl border border-dashed px-4 py-3 text-sm",
+                      tone === "glass"
+                        ? "border-white/15 text-white/50"
+                        : "text-muted-foreground"
+                    )}
+                  >
                     No AI response for this prompt.
                   </p>
                 )}
@@ -338,7 +416,11 @@ export const ConversationView = forwardRef<
             variant="outline"
             size="sm"
             onClick={onAddMessage}
-            className="gap-1.5"
+            className={cn(
+              "gap-1.5",
+              tone === "glass" &&
+                "border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+            )}
           >
             <Plus className="h-4 w-4" />
             Add Message

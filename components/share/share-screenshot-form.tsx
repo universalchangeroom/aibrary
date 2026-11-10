@@ -8,6 +8,7 @@ import {
   ScreenshotImportPanel,
   type ScreenshotParsedPreview,
 } from "@/components/import/screenshot-import-panel";
+import { ArtifactFields } from "@/components/share/artifact-fields";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   type RichTextEditorHandle,
 } from "@/components/rich-text-editor";
+import type { ArtifactType } from "@/lib/artifact";
 import { parseRawText } from "@/lib/parse-raw-text";
 import { parseTags } from "@/lib/parse-transcript";
 import {
@@ -59,6 +61,8 @@ export function ShareScreenshotForm() {
   const [tagsInput, setTagsInput] = useState("");
   const [summary, setSummary] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
+  const [artifactUrl, setArtifactUrl] = useState("");
+  const [artifactType, setArtifactType] = useState<ArtifactType | "">("");
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
@@ -216,6 +220,10 @@ export function ShareScreenshotForm() {
           source_model: model,
           summary: summary.trim() || null,
           source_url: sourceUrl.trim() || null,
+          artifact_url: artifactUrl.trim() || null,
+          artifact_type: artifactUrl.trim()
+            ? artifactType || null
+            : null,
           tags,
           content,
           is_public: true,
@@ -398,6 +406,15 @@ export function ShareScreenshotForm() {
           className="min-h-[4.5rem] resize-y"
         />
       </div>
+
+      <ArtifactFields
+        idPrefix="share-screenshot"
+        artifactUrl={artifactUrl}
+        artifactType={artifactType}
+        onArtifactUrlChange={setArtifactUrl}
+        onArtifactTypeChange={setArtifactType}
+        disabled={isSubmitting || isGeneratingPdf}
+      />
 
       <div className="space-y-2">
         <Label htmlFor="share-screenshot-source-url">

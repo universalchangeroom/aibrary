@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -19,6 +20,12 @@ export function SiteHeader() {
   const pathname = usePathname();
   const { user, isLoading } = useAuth();
   const [tokenBalance, setTokenBalance] = useState<number | null>(null);
+  const [showMountain, setShowMountain] = useState(false);
+  const [portalReady, setPortalReady] = useState(false);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -41,27 +48,102 @@ export function SiteHeader() {
     };
   }, [user, pathname]);
 
+  // Clear the easter egg if the pointer is released anywhere (incl. outside the logo).
+  useEffect(() => {
+    if (!showMountain) return;
+
+    function hideMountain() {
+      setShowMountain(false);
+    }
+
+    window.addEventListener("pointerup", hideMountain);
+    window.addEventListener("pointercancel", hideMountain);
+    window.addEventListener("blur", hideMountain);
+    return () => {
+      window.removeEventListener("pointerup", hideMountain);
+      window.removeEventListener("pointercancel", hideMountain);
+      window.removeEventListener("blur", hideMountain);
+    };
+  }, [showMountain]);
+
+  function beginMountainHold(event: ReactPointerEvent<HTMLElement>) {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setShowMountain(true);
+  }
+
+  const mountainOverlay =
+    showMountain && portalReady
+      ? createPortal(
+          <div
+            className="pointer-events-none fixed inset-0 z-[9999] flex items-center justify-center bg-black/95 p-6"
+            role="presentation"
+            aria-hidden
+          >
+            <div className="relative h-[min(90vh,56rem)] w-[min(90vw,56rem)]">
+              <Image
+                src="/mountain-logo.jpg"
+                alt="ChatShare mountain logo"
+                fill
+                priority
+                sizes="90vw"
+                className="object-contain"
+                draggable={false}
+              />
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="mx-auto flex h-14 w-full max-w-5xl items-center px-6">
         <nav className="flex items-center gap-6 text-sm">
-          <Link
-            href="/"
-            className="group flex items-center gap-2"
-            aria-label="ChatShare home"
-          >
-            <Image
-              src="/logo.png"
-              alt=""
-              width={36}
-              height={36}
-              priority
-              className="h-9 w-9 rounded-xl object-cover"
-            />
-            <span className="bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-lg font-bold tracking-tight text-transparent">
+          <div className="group flex items-center gap-2">
+            <Link
+              href="/"
+              aria-label="ChatShare home"
+              className="shrink-0"
+            >
+              <Image
+                src="/logo.png"
+                alt=""
+                width={36}
+                height={36}
+                priority
+                draggable={false}
+                onPointerDown={beginMountainHold}
+                onPointerUp={() => setShowMountain(false)}
+                onPointerCancel={() => setShowMountain(false)}
+                onContextMenu={(event) => event.preventDefault()}
+                className="h-9 w-9 touch-none select-none rounded-xl object-cover [-webkit-touch-callout:none]"
+              />
+            </Link>
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label="Show ChatShare mountain logo"
+              onPointerDown={beginMountainHold}
+              onPointerUp={() => setShowMountain(false)}
+              onPointerCancel={() => setShowMountain(false)}
+              onContextMenu={(event) => event.preventDefault()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setShowMountain(true);
+                }
+              }}
+              onKeyUp={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setShowMountain(false);
+                }
+              }}
+              className="cursor-pointer touch-none select-none bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-lg font-bold tracking-tight text-transparent [-webkit-touch-callout:none]"
+            >
               ChatShare
             </span>
-          </Link>
+          </div>
           <Link
             href="/feed"
             className="text-muted-foreground transition-colors hover:text-foreground"
@@ -94,6 +176,8 @@ export function SiteHeader() {
           className="ml-auto"
         />
       </div>
+
+      {mountainOverlay}
     </header>
   );
 }

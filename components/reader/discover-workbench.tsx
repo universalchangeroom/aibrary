@@ -35,7 +35,7 @@ export function DiscoverWorkbench({ children }: { children: ReactNode }) {
         {children}
       </div>
       {!showFeed ? (
-        <div className="relative z-10 min-h-[calc(100vh-7rem)] bg-background text-foreground">
+        <div className="relative z-10">
           <TabThreadPanel threadId={activeTabId} />
         </div>
       ) : null}

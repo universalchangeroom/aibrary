@@ -72,6 +72,8 @@ export type Database = {
           content: Json;
           source_model: string | null;
           source_url: string | null;
+          artifact_url: string | null;
+          artifact_type: string | null;
           summary: string | null;
           tags: string[];
           is_public: boolean;
@@ -89,6 +91,8 @@ export type Database = {
           content?: Json;
           source_model?: string | null;
           source_url?: string | null;
+          artifact_url?: string | null;
+          artifact_type?: string | null;
           summary?: string | null;
           tags?: string[];
           is_public?: boolean;
@@ -106,6 +110,8 @@ export type Database = {
           content?: Json;
           source_model?: string | null;
           source_url?: string | null;
+          artifact_url?: string | null;
+          artifact_type?: string | null;
           summary?: string | null;
           tags?: string[];
           is_public?: boolean;

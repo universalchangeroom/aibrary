@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, Loader2 } from "lucide-react";
 
@@ -60,15 +59,13 @@ export function ResetPasswordForm() {
           return;
         }
 
+        // No recovery/session → do not leave the form visible to casual visitors.
         setStatus("invalid");
-      } catch (err) {
+        router.replace("/login");
+      } catch {
         if (!isMounted) return;
-        const message =
-          err instanceof Error
-            ? err.message
-            : "This reset link is invalid or has expired.";
-        setError(message);
         setStatus("invalid");
+        router.replace("/login");
       }
     }
 
@@ -88,7 +85,7 @@ export function ResetPasswordForm() {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [searchParams]);
+  }, [router, searchParams]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -137,21 +134,9 @@ export function ResetPasswordForm() {
   if (status === "invalid") {
     return (
       <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl">Reset link expired</CardTitle>
-          <CardDescription>
-            This password reset link is invalid or has already been used.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {error ? (
-            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </p>
-          ) : null}
-          <Button asChild className="w-full">
-            <Link href="/login">Back to sign in</Link>
-          </Button>
+        <CardContent className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Redirecting…
         </CardContent>
       </Card>
     );

@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import { AddFootnoteDialog } from "@/components/feed/add-footnote-dialog";
+import { ArtifactShowcase } from "@/components/feed/artifact-showcase";
 import { AuthorLink } from "@/components/feed/author-link";
 import {
   ConversationView,
@@ -52,6 +53,8 @@ interface ThreadDetailViewProps {
   isAuthenticated: boolean;
   /** Optimistic Props total for the emoji row; falls back to thread.total_tokens. */
   displayedPropsTotal?: number;
+  /** `glass` = expanded Discover-card reading surface. */
+  surface?: "default" | "glass";
 }
 
 type EditLayout = "cards" | "raw";
@@ -155,7 +158,9 @@ export function ThreadDetailView({
   thread: initialThread,
   isAuthenticated,
   displayedPropsTotal,
+  surface = "default",
 }: ThreadDetailViewProps) {
+  const isGlass = surface === "glass";
   const router = useRouter();
   const { user, session } = useAuth();
   const [thread, setThread] = useState(initialThread);
@@ -545,6 +550,10 @@ export function ThreadDetailView({
     </div>
   );
 
+  const glassOutlineBtn = isGlass
+    ? "border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+    : undefined;
+
   const toolsPanel = !isEditing ? (
     <div className="space-y-4" aria-label="Thread tools">
       <div
@@ -566,6 +575,7 @@ export function ThreadDetailView({
           type="button"
           variant="outline"
           size="sm"
+          className={glassOutlineBtn}
           onClick={() => void copyThreadAsMarkdown()}
         >
           {markdownCopied ? (
@@ -579,6 +589,7 @@ export function ThreadDetailView({
           type="button"
           variant="outline"
           size="sm"
+          className={glassOutlineBtn}
           onClick={downloadThreadMarkdown}
         >
           <Download className="h-4 w-4" />
@@ -588,6 +599,7 @@ export function ThreadDetailView({
           type="button"
           variant="outline"
           size="sm"
+          className={glassOutlineBtn}
           onClick={copySystemPrompt}
         >
           {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
@@ -599,6 +611,7 @@ export function ThreadDetailView({
               type="button"
               variant="outline"
               size="sm"
+              className={glassOutlineBtn}
               onClick={enterEditMode}
             >
               <Pencil className="h-4 w-4" />
@@ -636,7 +649,11 @@ export function ThreadDetailView({
       {isOwner && thread.status === "pending_review" ? (
         <div
           role="status"
-          className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+          className={
+            isGlass
+              ? "rounded-md border border-amber-400/40 bg-amber-500/15 px-4 py-3 text-sm text-amber-50"
+              : "rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+          }
         >
           Your thread contains image or video content and has been submitted for admin
           review before appearing on the public feed.
@@ -660,21 +677,39 @@ export function ThreadDetailView({
                       }}
                       aria-label="Thread title"
                       disabled={isSaving}
-                      className="h-auto w-full border-primary/40 px-3 py-2 text-2xl font-bold tracking-tight shadow-none sm:text-3xl"
+                      className={
+                        isGlass
+                          ? "h-auto w-full border-amber-400/40 bg-black/30 px-3 py-2 font-serif text-2xl font-bold tracking-tight text-amber-50 shadow-none sm:text-3xl"
+                          : "h-auto w-full border-primary/40 px-3 py-2 text-2xl font-bold tracking-tight shadow-none sm:text-3xl"
+                      }
                     />
                     <Badge
                       variant="outline"
-                      className="border-primary/40 text-primary"
+                      className={
+                        isGlass
+                          ? "border-amber-400/50 text-amber-100"
+                          : "border-primary/40 text-primary"
+                      }
                     >
                       Editing
                     </Badge>
                   </div>
                 ) : (
-                  <h1 className="flex min-w-0 items-start gap-2 text-2xl font-bold tracking-tight break-words sm:text-3xl">
+                  <h1
+                    className={
+                      isGlass
+                        ? "flex min-w-0 items-start gap-2 font-serif text-2xl font-bold leading-tight tracking-tight text-amber-100 break-words drop-shadow-[0_0_12px_rgba(251,191,36,0.35)] sm:text-3xl lg:text-4xl"
+                        : "flex min-w-0 items-start gap-2 text-2xl font-bold tracking-tight break-words sm:text-3xl"
+                    }
+                  >
                     <span className="min-w-0 flex-1">{thread.title}</span>
                     {footnoteCount > 0 ? (
                       <span
-                        className="mt-1 shrink-0 text-amber-600"
+                        className={
+                          isGlass
+                            ? "mt-1 shrink-0 text-amber-300"
+                            : "mt-1 shrink-0 text-amber-600"
+                        }
                         aria-hidden
                       >
                         <MessageSquareWarning className="h-5 w-5" />
@@ -688,7 +723,11 @@ export function ThreadDetailView({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="mt-1 h-8 w-8 shrink-0 p-0 text-muted-foreground"
+                  className={
+                    isGlass
+                      ? "mt-1 h-8 w-8 shrink-0 p-0 text-white/55 hover:bg-white/10 hover:text-white"
+                      : "mt-1 h-8 w-8 shrink-0 p-0 text-muted-foreground"
+                  }
                   aria-label={isToolsOpen ? "Hide tools" : "Show tools"}
                   aria-expanded={isToolsOpen}
                   aria-controls="thread-tools-panel"
@@ -705,17 +744,28 @@ export function ThreadDetailView({
                 <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                     {thread.source_model ? (
-                      <SourceModelBadge sourceModel={thread.source_model} />
+                      <SourceModelBadge
+                        sourceModel={thread.source_model}
+                        variant={isGlass ? "discover" : "default"}
+                      />
                     ) : null}
                     <AuthorLink
                       author={thread.author}
                       authorId={thread.author_id}
-                      className="text-sm text-muted-foreground hover:text-foreground"
+                      className={
+                        isGlass
+                          ? "text-sm text-white/70 hover:text-white"
+                          : "text-sm text-muted-foreground hover:text-foreground"
+                      }
                     />
                     {thread.created_at ? (
                       <FormattedTime
                         date={thread.created_at}
-                        className="text-sm text-muted-foreground"
+                        className={
+                          isGlass
+                            ? "text-sm text-white/50"
+                            : "text-sm text-muted-foreground"
+                        }
                       />
                     ) : null}
                     {thread.tags.map((tag) => {
@@ -729,7 +779,11 @@ export function ThreadDetailView({
                         >
                           <Badge
                             variant="outline"
-                            className="cursor-pointer transition-colors hover:bg-amber-500/20"
+                            className={
+                              isGlass
+                                ? "cursor-pointer border-white/20 bg-white/5 text-white/80 transition-colors hover:bg-amber-500/20 hover:text-amber-100"
+                                : "cursor-pointer transition-colors hover:bg-amber-500/20"
+                            }
                           >
                             #{cleanTag}
                           </Badge>
@@ -742,7 +796,11 @@ export function ThreadDetailView({
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="shrink-0"
+                      className={
+                        isGlass
+                          ? "shrink-0 border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                          : "shrink-0"
+                      }
                       onClick={() => conversationRef.current?.toggleExpandAll()}
                       aria-pressed={expandState.allExpanded}
                     >
@@ -868,18 +926,29 @@ export function ThreadDetailView({
               />
             </section>
           ) : (
-            <ConversationView
-              ref={conversationRef}
-              messages={isEditing ? editMessages : thread.content}
-              footnotes={isEditing ? [] : thread.footnotes}
-              threadId={thread.id}
-              isEditing={isEditing && editLayout === "cards"}
-              hideExpandControls
-              onExpandStateChange={handleExpandStateChange}
-              onMessageContentChange={updateMessageContent}
-              onRemoveMessage={removeMessage}
-              onAddMessage={addMessage}
-            />
+            <>
+              {!isEditing && thread.artifact_url ? (
+                <ArtifactShowcase
+                  url={thread.artifact_url}
+                  type={thread.artifact_type}
+                  tone={isGlass ? "glass" : "default"}
+                  className="mb-2"
+                />
+              ) : null}
+              <ConversationView
+                ref={conversationRef}
+                messages={isEditing ? editMessages : thread.content}
+                footnotes={isEditing ? [] : thread.footnotes}
+                threadId={thread.id}
+                isEditing={isEditing && editLayout === "cards"}
+                hideExpandControls
+                tone={isGlass ? "glass" : "default"}
+                onExpandStateChange={handleExpandStateChange}
+                onMessageContentChange={updateMessageContent}
+                onRemoveMessage={removeMessage}
+                onAddMessage={addMessage}
+              />
+            </>
           )}
 
           {isEditing ? (

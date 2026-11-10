@@ -2,6 +2,12 @@ import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
+import {
+  asHttpUrl,
+  detectArtifactType,
+  isArtifactType,
+  type ArtifactType,
+} from "@/lib/artifact";
 import { getHonestStartBalance } from "@/lib/props-balance";
 import {
   DAILY_PUBLISH_LIMIT,
@@ -34,6 +40,8 @@ interface PublishThreadBody {
   source_url?: unknown;
   /** @deprecated Prefer `source_url`. */
   originalUrl?: unknown;
+  artifact_url?: unknown;
+  artifact_type?: unknown;
   summary?: unknown;
   tags?: unknown;
   is_public?: unknown;
@@ -82,7 +90,7 @@ function sourceModelFromPayload(body: PublishThreadBody): string | null {
 /**
  * POST /api/threads
  * Authorization: Bearer <supabase_access_token>
- * Body: { title, content, source_model?, source_url?, summary?, tags?, is_public? }
+ * Body: { title, content, source_model?, source_url?, artifact_url?, artifact_type?, summary?, tags?, is_public? }
  *   `content` is the jsonb transcript: [{ role, content }].
  *   Aliases: `messages` (same array), `transcript` (raw Markdown string).
  *
@@ -177,6 +185,31 @@ export async function POST(request: Request) {
       );
     }
   }
+
+  const rawArtifactUrl =
+    typeof body.artifact_url === "string" && body.artifact_url.trim()
+      ? body.artifact_url.trim().slice(0, 2_000)
+      : null;
+  let artifactUrl: string | null = null;
+  let artifactType: ArtifactType | null = null;
+  if (rawArtifactUrl) {
+    artifactUrl = asHttpUrl(rawArtifactUrl);
+    if (!artifactUrl) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Artifact URL must be a valid http(s) URL.",
+        },
+        { status: 400 }
+      );
+    }
+    if (isArtifactType(body.artifact_type)) {
+      artifactType = body.artifact_type;
+    } else {
+      artifactType = detectArtifactType(artifactUrl);
+    }
+  }
+
   const isPublic = body.is_public !== false;
   const sourceModel = sourceModelFromPayload(body);
 
@@ -295,6 +328,8 @@ export async function POST(request: Request) {
       content: messagesToInsert,
       source_model: sourceModel,
       source_url: sourceUrl,
+      artifact_url: artifactUrl,
+      artifact_type: artifactType,
       summary,
       tags,
       is_public: isPublic,

@@ -55,6 +55,10 @@ export interface Thread {
   source_model: string | null;
   /** Optional public share URL of the original AI conversation. */
   source_url?: string | null;
+  /** Optional external AI artifact (image / video / audio / mini-app). */
+  artifact_url?: string | null;
+  /** Artifact kind: image | video | audio | iframe | link. */
+  artifact_type?: string | null;
   summary?: string | null;
   tags: string[];
   is_public: boolean;

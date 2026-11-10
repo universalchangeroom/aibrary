@@ -53,8 +53,8 @@ export function TabThreadPanel({ threadId }: { threadId: string }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center gap-2 text-sm text-stone-500">
-        <Loader2 className="h-5 w-5 animate-spin text-amber-600" aria-hidden />
+      <div className="relative flex min-h-[calc(100vh-7rem)] items-center justify-center gap-2 bg-slate-950 text-sm text-white/70">
+        <Loader2 className="h-5 w-5 animate-spin text-amber-400" aria-hidden />
         Loading conversation…
       </div>
     );
@@ -62,10 +62,10 @@ export function TabThreadPanel({ threadId }: { threadId: string }) {
 
   if (error || !payload) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-12">
+      <div className="relative min-h-[calc(100vh-7rem)] bg-slate-950 px-6 py-12">
         <p
           role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+          className="mx-auto max-w-4xl rounded-lg border border-red-400/30 bg-red-950/40 px-4 py-3 text-sm text-red-100"
         >
           {error ?? "This conversation could not be loaded."}
         </p>
@@ -74,16 +74,14 @@ export function TabThreadPanel({ threadId }: { threadId: string }) {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-6 py-12">
-      <ThreadPageClient
-        key={payload.thread.id}
-        thread={payload.thread}
-        isAuthenticated={payload.isAuthenticated}
-        currentUserId={payload.currentUserId}
-        viewerTokenBalance={payload.viewerTokenBalance}
-        viewerHasStarred={payload.viewerHasStarred}
-        viewerGivenProps={payload.viewerGivenProps}
-      />
-    </main>
+    <ThreadPageClient
+      key={payload.thread.id}
+      thread={payload.thread}
+      isAuthenticated={payload.isAuthenticated}
+      currentUserId={payload.currentUserId}
+      viewerTokenBalance={payload.viewerTokenBalance}
+      viewerHasStarred={payload.viewerHasStarred}
+      viewerGivenProps={payload.viewerGivenProps}
+    />
   );
 }
